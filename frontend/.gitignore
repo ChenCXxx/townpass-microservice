@@ -1,0 +1,26 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencies
+node_modules/
+
+# Build
+dist/
+*.local
+
+# Env (keep ONLY example)
+.env
+.env.*
+!.env.example
+!.env.development.example
+
+# Editor / misc
+.DS_Store
+.vscode/
+.firebase/

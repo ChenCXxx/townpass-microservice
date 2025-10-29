@@ -1,0 +1,39 @@
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Python venv
+.venv/
+venv/
+
+# Node
+node_modules/
+
+# Logs
+*.log
+logs/
+
+# Env
+.env
+.env.*
+!.env.example
+!.env.development.example
+.env.local
+.env.production
+.env.development
+
+# Build outputs
+dist/
+build/
+
+# SQLite / runtime
+*.db
+instance/
+
+# Others
+__pycache__/
+.pytest_cache/
+*.pyc
+.coverage

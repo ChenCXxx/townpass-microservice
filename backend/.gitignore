@@ -1,0 +1,22 @@
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# Envs
+.env
+.env.*
+!.env.example
+!.env.cloudrun.example
+
+# Local DB
+app.db
+*.sqlite3
+
+# Docker ignore (告訴你自己有 .dockerignore)
+.dockerignore
