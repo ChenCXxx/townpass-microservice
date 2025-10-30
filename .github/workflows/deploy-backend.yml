@@ -60,7 +60,7 @@ jobs:
           --image ${{ env.AR_REPO_PATH }}:${{ github.sha }}
           --region ${{ secrets.REGION }}
           --set-cloudsql-instances "${{ secrets.INSTANCE_CONNECTION_NAME }}"
-          --set-env-vars DATABASE_URL=${{ steps.dburl.outputs.DATABASE_URL }},PYTHONUNBUFFERED=1,PYTHONPATH=/app
+          --set-env-vars "DATABASE_URL=${{ steps.dburl.outputs.DATABASE_URL }},PYTHONUNBUFFERED=1,PYTHONPATH=/app"
           --service-account github-deployer@${{ secrets.PROJECT_ID }}.iam.gserviceaccount.com
           --command=bash
           --args=-lc
@@ -71,7 +71,7 @@ jobs:
         env:
           REGION: ${{ secrets.REGION }}
         run: |
-          set -e
+          set +e
       
           # 啟動並同步等待完成，成功時會回傳 execution 名稱
           EXEC_NAME="$(gcloud run jobs execute fastapi-db-migrate \
