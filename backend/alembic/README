@@ -1,1 +1,122 @@
+Alembic 使用說明（TownPass backend）
+
+此文件說明如何在本專案使用 Alembic 來建立與套用資料庫 migration（包含本機開發和在 docker-compose 環境下的操作範例），並列出常見錯誤與排解方式。
+
+## 前提
+- 已安裝 Python 開發環境並啟用虛擬環境（或在容器內執行）。
+- 已安裝專案依賴（`pip install -r requirements.txt`），且 `alembic` 與 `SQLAlchemy`、`psycopg` 在 requirements 裡。
+- `backend/.env` 中 `DATABASE_URL` 需設定為可連線的資料庫（開發時可使用 docker-compose 的 Postgres）。
+- `alembic/env.py` 應該把 `target_metadata` 指向你的 SQLAlchemy `Base.metadata`（範例：`from app.database import Base` → `target_metadata = Base.metadata`）。
+
+## 快速流程（本機 / PowerShell 或 Bash）
+1. 啟用虛擬環境並安裝依賴
+```
+# PowerShell 範例（Windows）
+cd backend
+.venv\\Scripts\\Activate.ps1   # 或你自己的 venv 啟動方式
+pip install -r requirements.txt
+```
+
+2. 確認資料庫可連線（若使用 docker-compose）
+```
+# 啟動 db (以及 api 如需要)
+docker compose up -d db
+
+# 檢查狀態
+docker compose ps
+docker logs townpass_db --tail 50
+```
+
+3. 產生 migration（autogenerate）
+```
+cd backend
+alembic revision --autogenerate -m "add some changes"
+```
+- 產生後檢查 `alembic/versions/` 的檔案，確認 `op.create_table(...)` 等語句正確。
+
+4. 套用 migration
+```
+alembic upgrade head
+```
+
+5. 查看目前版本
+```
+alembic current
+alembic history --verbose
+```
+
+6. 回滾（回到上一版）
+```
+alembic downgrade -1
+```
+
+## 在 docker-compose（容器）中執行 Alembic
+有兩種常見方法：在 `api` container 內執行，或啟動臨時 container 並掛載 repo。
+
+方法 A：在已包含 alembic 的 `api` container 內執行（建議）
+```
+# 啟動 api 與 db
+docker compose up -d api db
+
+# 在 api container 執行 alembic
+docker compose exec api alembic revision --autogenerate -m "add test_records"
+docker compose exec api alembic upgrade head
+```
+
+方法 B：臨時 container（如果 api image 沒包含開發工具）
+```
+# 取得 compose network 名稱 (範例 backend_default)
+docker network ls
+
+docker run --rm -it --network backend_default \\
+  -v "%cd%":/app -w /app python:3.11 bash
+# 裡面執行
+pip install -r backend/requirements.txt
+cd backend
+alembic revision --autogenerate -m "..."
+alembic upgrade head
+```
+
+注意：容器內執行時通常 `DATABASE_URL` 會使用 service 名稱 `db` 做為 host（例如 `postgresql+psycopg://admin:password@db:5432/townpass_db`）。從 host（PowerShell）執行時，`db` 並不會被解析，需改為 `127.0.0.1` 或容器 port 映射的 host port。
+
+## 手動建立 migration 範例
+若你不想使用 autogenerate，可以建立空白 migration 並手寫升級腳本：
+```
+alembic revision -m "create test_records table" --autogenerate=false
+# 編輯剛產生的檔案，在 upgrade() 與 downgrade() 裡寫 op.create_table / op.drop_table
+```
+
+## 在 CI / Deploy 時使用 Alembic
+- 建議在 Deploy pipeline（例如 GitHub Actions）中執行 `alembic upgrade head`，但請先 REVIEW migration 檔並確保沒有破壞性改動會在未審核下自動套用。
+- 或在 CI 產生 migration 檔後以人為流程審查，再由 Release job 執行 upgrade。
+
+## 常見錯誤與排解
+
+- `Can't proceed with --autogenerate ... target_metadata is None`
+  - 原因：`alembic/env.py` 沒有正確提供 `target_metadata`。
+  - 解法：在 `alembic/env.py` 裡 import 你的 Base（例如 `from app.database import Base`），並設定 `target_metadata = Base.metadata`。必要時把 project root 加到 `sys.path`。
+
+- `getaddrinfo failed`（或 `psycopg.OperationalError: getaddrinfo failed`）
+  - 原因：資料庫 host 無法解析（例如 `db` 只有在 container network 中可解析）。
+  - 解法：
+    - 若你在主機執行 alembic，請在 `.env` 或環境變數中把 host 改成 `127.0.0.1`（並確認 docker-compose 有映射 port），或
+    - 在 container 內執行 alembic 並使用 host `db`。
+
+- `password authentication failed for user`
+  - 原因：連線時提供的密碼與資料庫使用者不符；常見因為 volume 已存在且初始化時用不同密碼。
+  - 解法：
+    - 檢查 `docker-compose.yml` 的 `POSTGRES_PASSWORD` 與實際 DB 密碼是否一致；若需要可在 container 內用 psql 改密碼或刪除 volume 重新建立（會遺失資料）；
+    - 使用 `docker exec -it townpass_db psql -U postgres -c "ALTER USER admin WITH PASSWORD 'password';"` 修改密碼（若能登入 postgres 使用者）。
+
+## 注意事項
+- 不推薦在 production 直接使用 `Base.metadata.create_all()` 來管理 schema；應使用 Alembic 做版本管理與遷移（或在可控且可回滾的流程下自動執行 migration）。
+- 若要在開發時自動建立表，可在 `app/main.py` 的 startup handler 中以環境變數或設定條件執行 `Base.metadata.create_all()`（但請避免在 production 啟用）。
+- 在多實例部署（多個 Cloud Run instance /多個 pod）時同時自動執行 migration 可能造成 race condition，應由單一控制點（CI/Deploy job）來執行 migration。
+
+---
+若你需要我：
+- 幫你自動產生一個 `alembic` migration 檔（根據目前 model 新增 `test_records`），我可以產生一個初始版本檔案供你 review；或
+- 幫你修改 `alembic/env.py`（把 `target_metadata` 指向 `app.database.Base`）並示範如何在本機或 container 內跑 `alembic revision` 與 `alembic upgrade`。
+
+寫於 TownPass backend
 Generic single-database configuration.

@@ -1,16 +1,4 @@
 services:
-  api:
-    build: .
-    container_name: api
-    ports:
-      - "8000:8000"
-    environment:
-      - DATABASE_URL=postgresql+psycopg://admin:password@db:5432/townpass_db
-    depends_on:
-      - db
-    # 開發時方便看 log
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-
   db:
     image: postgres:16
     container_name: townpass_db
@@ -20,9 +8,23 @@ services:
       POSTGRES_DB: townpass_db
     ports:
       - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d townpass_db"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
     volumes:
       - pgdata:/var/lib/postgresql/data
   
+  migrate:
+    build: .
+    environment:
+      - DATABASE_URL=postgresql+psycopg://admin:password@db:5432/townpass_db
+    depends_on:
+      db:
+        condition: service_healthy
+    command: python -m alembic -c alembic.ini upgrade head
+
   adminer:
     image: adminer
     depends_on: [db]

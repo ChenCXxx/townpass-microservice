@@ -23,3 +23,13 @@ export const createUser = (p) =>
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify(p)
     }).then(r=>r.json())
+
+export const listTestRecords = () =>
+  fetch(`${BASE}/api/test_records`).then(r=>r.json())
+
+export const createTestRecord = (p) =>
+  fetch(`${BASE}/api/test_records`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(p)
+  }).then(r=>r.json())

@@ -52,7 +52,26 @@ jobs:
         run: |
           URL_ENC_PASS="$(python3 -c "import urllib.parse,os; print(urllib.parse.quote(os.environ['DB_PASS'], safe=''))")"
           echo "DATABASE_URL=postgresql+psycopg://${DB_USER}:${URL_ENC_PASS}@/${DB_NAME}?host=/cloudsql/${ICN}" >> "$GITHUB_OUTPUT"
+      
+      # Deploy DB Migration Job
+      - name: Deploy DB Migration Job (alembic upgrade head)
+        run: |
+          gcloud run jobs deploy fastapi-db-migrate \
+            --image ${{ env.AR_REPO_PATH }}:${{ github.sha }} \
+            --region ${{ secrets.REGION }} \
+            --add-cloudsql-instances "${{ secrets.INSTANCE_CONNECTION_NAME }}" \
+            --set-env-vars "DATABASE_URL=${{ steps.dburl.outputs.DATABASE_URL }}" \
+            --command "alembic" \
+            --args "upgrade","head" \
+            --max-retries 1 \
+            --memory 512Mi \
+            --cpu 1
 
+      - name: Run DB Migration Job
+        run: |
+          gcloud run jobs execute fastapi-db-migrate \
+            --region ${{ secrets.REGION }} --wait
+            
       # Deploy to Cloud Run
       - name: Deploy
         env:

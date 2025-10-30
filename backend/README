@@ -1,0 +1,148 @@
+專案結構（後端重點）
+
+backend/
+├─ app/
+│  ├─ main.py
+│  ├─ database.py          # create_engine / SessionLocal / Base
+│  ├─ models.py            # models 都使用 from app.database import Base
+│  ├─ routers/             # FastAPI routers（包含 api.py）
+│  └─ ...                 
+├─ alembic/
+│  └─ versions/            # 版本化遷移檔（請務必納入版控）
+├─ alembic.ini
+├─ requirements.txt
+├─ docker-compose.yml      # 只啟 DB + Adminer（也提供 migrate 服務範例）
+├─ .env.development        # 本機 DB 連線（不要上傳密碼到公開庫）
+└─ README
+
+簡介
+--
+這份 README 給後端開發者快速上手的指引：
+- 使用 Docker 只跑資料庫（Postgres）與 Adminer，後端用本機 Python 開發。
+- 用 Alembic 管理資料庫遷移（production / CI 也應使用 Alembic）。
+
+1) 用 Docker 只跑資料庫（Postgres + Adminer）
+
+docker-compose.yml（重點）會把主機的 5433 對應到容器的 5432，Adminer 暴露為 8080。
+
+啟動（在 `backend/` 下）：
+
+```cmd
+docker compose up -d
+```
+
+檢查狀態：
+
+```cmd
+docker compose ps
+docker logs townpass_db --tail 50
+```
+
+關閉：
+
+```cmd
+docker compose down
+```
+
+若需要重置資料（會刪掉 DB 資料）：
+
+```cmd
+docker compose down -v
+```
+
+連線資訊（開發預設）
+
+- DB URL（後端本機程式可使用）：
+  postgresql+psycopg://admin:password@localhost:5433/townpass_db
+- Adminer UI： http://localhost:8080  （System: PostgreSQL）
+- 帳號： admin / 密碼： password
+
+2) 設定環境變數
+
+開發時請在 `backend/.env.development` 或 `backend/.env` 中放入：
+
+```text
+DATABASE_URL=postgresql+psycopg://admin:password@localhost:5433/townpass_db
+```
+
+app/config.py 會讀取 `.env.development`（請確認設定檔中的 `env_file` 對應正確）。
+
+3) 在本機啟動後端（開發模式）
+
+```cmd
+cd backend
+.venv\Scripts\activate    # 如果你有 virtualenv
+pip install -r requirements.txt
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+```
+
+打開 Swagger UI： http://127.0.0.1:8000/docs
+
+4) 重新建構 / 在容器內執行 api
+
+如果你是使用 Docker image（`docker compose up api` 或 `docker compose up --build`），在修改後端程式碼後必須重建 image 才會生效。常見做法：
+
+```cmd
+cd backend
+docker compose up -d --build api
+docker compose logs api --tail 200
+```
+
+開發時若要即時反映變更，可在 `docker-compose.yml` 的 `api` 服務加入掛載（volume）：
+
+```yaml
+services:
+  api:
+    volumes:
+      - ./app:/app/app:rw
+```
+
+（注意：容器內必須有相容的 Python 套件與開發工具）
+
+5) Alembic（資料庫遷移）
+
+請用 Alembic 管理資料庫變更，切勿在 production 直接靠 `create_all` 建表。
+
+快速範例（在本機或 container 內執行）：
+
+```cmd
+cd backend
+# 產生 migration（autogenerate）
+alembic revision --autogenerate -m "add xxx"
+# 套用 migration
+alembic upgrade head
+```
+
+若在 container 內執行（建議在 compose network 裡執行，能解析 service name `db`）：
+
+```cmd
+docker compose up -d api db
+docker compose exec api alembic revision --autogenerate -m "add tables"
+docker compose exec api alembic upgrade head
+```
+
+常見問題：
+- `Can't proceed with --autogenerate ... does not provide a MetaData object`：請確認 `alembic/env.py` 中 `target_metadata` 指向 `app.database.Base.metadata`。
+- `relation ... does not exist`：表示 table 尚未建立，請執行 Alembic migration 或在本機暫時使用 `Base.metadata.create_all(bind=engine)`（僅限開發）。
+
+6) 新增的 API 與前端整合
+
+- 我們已新增 `TestRecord` model（`app/models.py`）與對應的 Pydantic schema，並在 `app/routers/api.py` 提供：
+  - GET `/api/test_records` — 列表
+  - POST `/api/test_records` — 新增
+- 前端 `frontend/src/service/api.js` 已新增 `listTestRecords()` 與 `createTestRecord()`，`Home.vue` 範例 UI 會顯示與建立 TestRecord（開發時需啟動前端 dev server）。
+
+7) 常見除錯提示
+
+- 404 for new route: 表示運行中的 `api` container 沒有載入最新程式（請重建或使用 volume 掛載）。
+- 密碼驗證失敗（`password authentication failed`）：很可能是 Postgres volume 已有舊密碼，解法：
+  - 若可以丟棄資料：`docker compose down -v` 然後重啟 db；
+  - 若要保留資料：用 postgres superuser 修改使用者密碼（`docker exec -it townpass_db psql -U postgres -c "ALTER USER admin WITH PASSWORD 'password';"`），或新增一個 DB 使用者並更新 `DATABASE_URL`。
+- 若 Alembic autogenerate 沒偵測變更：確認 `alembic/env.py` 的 `target_metadata` 已指向 `app.database.Base.metadata`，並且 models 已匯入（alembic 需要匯入 model module 才能看到 metadata）。
+
+8) 其他建議
+
+- 把敏感資訊（service account、明碼密碼）放到 CI / Secret Manager，不要直接放到版控。
+- 開發流程：本機用 `uvicorn --reload` + Docker 只開 Postgres；在 CI 用 `alembic upgrade head` 再部署到 Cloud Run / GKE /其他。
+
+如果你要我幫忙把 README 再收斂成 README.dev（給新開發者）或 README.prod（部署指南），我可以繼續分拆與補充具體範例。
