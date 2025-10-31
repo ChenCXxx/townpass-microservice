@@ -11,24 +11,25 @@ backend/
 │  └─ versions/            # 版本化遷移檔（請務必納入版控）
 ├─ alembic.ini
 ├─ requirements.txt
-├─ docker-compose.yml      # 只啟 DB + Adminer（也提供 migrate 服務範例）
+├─ docker-compose.yml      # 啟 DB + Adminer + migrate + api（全套一鍵啟動）
 ├─ .env.development        # 本機 DB 連線（不要上傳密碼到公開庫）
 └─ README
 
 簡介
 --
 這份 README 給後端開發者快速上手的指引：
-- 使用 Docker 只跑資料庫（Postgres）與 Adminer，後端用本機 Python 開發。
-- 用 Alembic 管理資料庫遷移（production / CI 也應使用 Alembic）。
+- 使用 docker-compose 一鍵啟動 db → migrate → api → adminer。
+- 用 Alembic 管理資料庫遷移（本機與 CI/production 皆一致）。
+- Dockerfile 採用 uv 基底鏡像以加速建置。
 
-1) 用 Docker 只跑資料庫（Postgres + Adminer）
+1) 快速開始（docker-compose 一鍵啟動）
 
-docker-compose.yml（重點）會把主機的 5433 對應到容器的 5432，Adminer 暴露為 8080。
+docker-compose.yml 預設：Postgres 對外 5433→5432（可選）、Adminer 8080→8080、API 8081→8081。
 
 啟動（在 `backend/` 下）：
 
 ```cmd
-docker compose up -d
+docker compose up --build
 ```
 
 檢查狀態：
@@ -37,6 +38,11 @@ docker compose up -d
 docker compose ps
 docker logs townpass_db --tail 50
 ```
+
+服務網址：
+
+- API（FastAPI Swagger）：http://127.0.0.1:8081/docs
+- Adminer（DB 管理）：http://localhost:8080
 
 關閉：
 
@@ -50,12 +56,11 @@ docker compose down
 docker compose down -v
 ```
 
-連線資訊（開發預設）
+連線資訊（選用，僅當你要從主機直連 DB 時）
 
-- DB URL（後端本機程式可使用）：
-  postgresql+psycopg://admin:password@localhost:5433/townpass_db
-- Adminer UI： http://localhost:8080  （System: PostgreSQL）
-- 帳號： admin / 密碼： password
+- DB URL：postgresql+psycopg://admin:password@localhost:5433/townpass_db
+  - 若 5433 於 Windows 上被限制/占用，可改用其他埠或直接移除 `db.ports`，改由 Adminer 訪問 DB。
+- Adminer（System: PostgreSQL）：http://localhost:8080（帳號 admin / 密碼 password）
 
 2) 設定環境變數
 
@@ -67,7 +72,7 @@ DATABASE_URL=postgresql+psycopg://admin:password@localhost:5433/townpass_db
 
 app/config.py 會讀取 `.env.development`（請確認設定檔中的 `env_file` 對應正確）。
 
-3) 在本機啟動後端（開發模式）
+3) 在本機啟動後端（不經容器，開發模式，選用）
 
 ```cmd
 cd backend
@@ -119,18 +124,28 @@ alembic upgrade head
 docker compose up -d api db
 docker compose exec api alembic revision --autogenerate -m "add tables"
 docker compose exec api alembic upgrade head
+
+compose 亦已定義 `migrate` 服務，`docker compose up` 會在 DB 健康後自動執行：
+
+```cmd
+docker compose up --build
+# 流程：db(健康) → migrate(成功結束) → api 啟動
+```
 ```
 
 常見問題：
 - `Can't proceed with --autogenerate ... does not provide a MetaData object`：請確認 `alembic/env.py` 中 `target_metadata` 指向 `app.database.Base.metadata`。
 - `relation ... does not exist`：表示 table 尚未建立，請執行 Alembic migration 或在本機暫時使用 `Base.metadata.create_all(bind=engine)`（僅限開發）。
 
-6) 新增的 API 與前端整合
+6) 後端 API 與前端整合
 
 - 我們已新增 `TestRecord` model（`app/models.py`）與對應的 Pydantic schema，並在 `app/routers/api.py` 提供：
   - GET `/api/test_records` — 列表
   - POST `/api/test_records` — 新增
-- 前端 `frontend/src/service/api.js` 已新增 `listTestRecords()` 與 `createTestRecord()`，`Home.vue` 範例 UI 會顯示與建立 TestRecord（開發時需啟動前端 dev server）。
+- 前端開發伺服器預設跑在 `http://localhost:5173`。請設定：
+  - `VITE_API_BASE=http://127.0.0.1:8081`（compose 啟動的 api）
+  - 或 `VITE_API_BASE=http://127.0.0.1:8000`（本機 uvicorn 啟動）
+- 在程式端請使用絕對網址或 URL builder，避免出現 `http://localhost:5173/127.0.0.1:8081/...` 的錯誤拼接。
 
 7) 常見除錯提示
 
@@ -140,9 +155,22 @@ docker compose exec api alembic upgrade head
   - 若要保留資料：用 postgres superuser 修改使用者密碼（`docker exec -it townpass_db psql -U postgres -c "ALTER USER admin WITH PASSWORD 'password';"`），或新增一個 DB 使用者並更新 `DATABASE_URL`。
 - 若 Alembic autogenerate 沒偵測變更：確認 `alembic/env.py` 的 `target_metadata` 已指向 `app.database.Base.metadata`，並且 models 已匯入（alembic 需要匯入 model module 才能看到 metadata）。
 
-8) 其他建議
+7) 其他建議
 
 - 把敏感資訊（service account、明碼密碼）放到 CI / Secret Manager，不要直接放到版控。
-- 開發流程：本機用 `uvicorn --reload` + Docker 只開 Postgres；在 CI 用 `alembic upgrade head` 再部署到 Cloud Run / GKE /其他。
+- 開發流程：本機用 `uvicorn --reload` 或用 compose 的 `api`；在 CI 用 `alembic upgrade head` 再部署到 Cloud Run / GKE / 其他。
+
+附註：Dockerfile 改為 uv 基底鏡像，建置採用：
+
+```Dockerfile
+FROM ghcr.io/astral-sh/uv:python3.11-bookworm-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN uv pip install --system --no-cache -r requirements.txt
+COPY app ./app
+COPY alembic ./alembic
+COPY alembic.ini .
+CMD exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8080}
+```
 
 如果你要我幫忙把 README 再收斂成 README.dev（給新開發者）或 README.prod（部署指南），我可以繼續分拆與補充具體範例。
