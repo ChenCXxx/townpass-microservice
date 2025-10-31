@@ -31,5 +31,18 @@ services:
     ports:
       - "8080:8080"
 
+  api:
+    build: .
+    environment:
+      - DATABASE_URL=postgresql+psycopg://admin:password@db:5432/townpass_db
+      - PORT=8000
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "8000:8000"
+
 volumes:
   pgdata:
