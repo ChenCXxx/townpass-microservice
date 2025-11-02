@@ -37,7 +37,9 @@ jobs:
           pnpm install --frozen-lockfile
 
       - name: Create .env.production
-        run: echo "VITE_API_BASE=${{ secrets.FRONTEND_API_BASE }}" > .env.production
+        run: |
+          echo "VITE_API_BASE=${{ secrets.FRONTEND_API_BASE }}" > .env.production
+          echo "VITE_MAPBOXTOKEN=${{ secrets.VITE_MAPBOXTOKEN }}" >> .env.production
 
       - name: Build
         run: pnpm build
