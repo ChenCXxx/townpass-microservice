@@ -1,8 +1,8 @@
 <script setup>
-import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import TopTabs from './TopTabs.vue'
-import { getConstructionData, updateConstructionData } from '@/service/api'
+import { getConstructionData, updateConstructionData, getConstructionNotices } from '@/service/api'
 
 const router = useRouter()
 const currentTab = ref('recommend')
@@ -13,10 +13,13 @@ const notificationEnabled = ref({}) // { [placeId]: boolean }
 const selectedCategory = ref({}) // { [placeId]: 'nearby' | 'upcoming' }
 const FAVORITES_STORAGE_KEY = 'mapFavorites'
 const NOTIFICATION_STORAGE_KEY = 'placeNotifications'
+const constructionNotices = ref([]) // 施工公告資料
+const loadingNotices = ref(false)
 
 onMounted(async () => {
   loadSavedPlaces()
   loadNotificationSettings()
+  await loadConstructionNotices()
   if (typeof window !== 'undefined') {
     window.addEventListener('map-favorites-updated', loadSavedPlaces)
   }
@@ -194,21 +197,71 @@ function parsePossibleDate(raw) {
 }
 
 function getFilteredRecommendations(place) {
+  const category = selectedCategory.value[place.id]
+  
+  if (category === 'upcoming') {
+    // 從施工公告 API 獲取未來施工公告
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    
+    // 篩選未來施工公告
+    const upcomingNotices = constructionNotices.value.filter(notice => {
+      if (!notice.start_date) return false
+      const startDate = new Date(notice.start_date)
+      startDate.setHours(0, 0, 0, 0)
+      return startDate > today
+    })
+    
+    // 計算每個公告與收藏地點的距離
+    const placeLon = place.lon
+    const placeLat = place.lat
+    
+    if (!placeLon || !placeLat) {
+      return []
+    }
+    
+    const noticesWithDistance = upcomingNotices.map(notice => {
+      let distance = null
+      
+      // 從 geometry 中提取座標
+      if (notice.geometry) {
+        const center = getGeometryCenter(notice.geometry)
+        if (center) {
+          distance = calculateDistance(placeLon, placeLat, center.lon, center.lat)
+        }
+      }
+      
+      return {
+        id: notice.id,
+        name: notice.name,
+        addr: notice.road || notice.name,
+        dist: distance,
+        props: {
+          AP_NAME: notice.name,
+          PURP: notice.road || notice.type || '',
+          SDATE: notice.start_date,
+          EDATE: notice.end_date,
+          TYPE: notice.type,
+          UNIT: notice.unit
+        },
+        notice: notice // 保存完整公告資料
+      }
+    })
+    
+    // 按距離排序（有距離的在前，然後按距離升序）
+    noticesWithDistance.sort((a, b) => {
+      if (a.dist === null && b.dist === null) return 0
+      if (a.dist === null) return 1
+      if (b.dist === null) return -1
+      return a.dist - b.dist
+    })
+    
+    return noticesWithDistance
+  }
+  
+  // nearby - 使用原有的邏輯
   const recs = Array.isArray(place.recommendations) ? place.recommendations : []
   const constructions = recs.filter(r => r?.dsid === 'construction' || (r?.props && (r.props.AP_NAME || r.props.PURP)))
-  const category = selectedCategory.value[place.id]
-  if (category === 'upcoming') {
-    const now = new Date()
-    const future = constructions.filter(r => {
-      const props = r?.props || {}
-      const dateCandidate = parsePossibleDate(props.SDATE || props.START_DATE || props.startDate || props.BEG_DATE)
-      if (!dateCandidate) return false
-      return dateCandidate.getTime() > now.getTime()
-    })
-    // 若沒有任何可判斷為未來的施工，回傳空陣列表示『目前沒有未來公告』
-    return future
-  }
-  // nearby
   return constructions
 }
 
@@ -223,6 +276,16 @@ function formatFavoriteDate(value) {
   }
 }
 
+function formatDate(dateStr) {
+  if (!dateStr) return ''
+  try {
+    const date = new Date(dateStr)
+    return date.toLocaleDateString('zh-TW')
+  } catch {
+    return dateStr
+  }
+}
+
 function formatDistance(meters) {
   if (typeof meters !== 'number' || Number.isNaN(meters)) return ''
   if (meters >= 1000) {
@@ -230,6 +293,53 @@ function formatDistance(meters) {
     return `${km >= 10 ? km.toFixed(0) : km.toFixed(1)} 公里`
   }
   return `${Math.round(meters)} 公尺`
+}
+
+// 計算兩點之間的距離（Haversine 公式，單位：公尺）
+function calculateDistance(lon1, lat1, lon2, lat2) {
+  const toRad = (d) => d * Math.PI / 180
+  const R = 6371000 // 地球半徑（公尺）
+  const dLat = toRad(lat2 - lat1)
+  const dLon = toRad(lon2 - lon1)
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2
+  return 2 * R * Math.asin(Math.sqrt(a))
+}
+
+// 從 GeoJSON geometry 中提取中心點座標
+function getGeometryCenter(geometry) {
+  if (!geometry) return null
+  
+  if (geometry.type === 'Point') {
+    return { lon: geometry.coordinates[0], lat: geometry.coordinates[1] }
+  } else if (geometry.type === 'Polygon' && geometry.coordinates && geometry.coordinates[0]) {
+    // 計算多邊形的中心點（簡單平均）
+    const coords = geometry.coordinates[0]
+    let sumLon = 0
+    let sumLat = 0
+    let count = 0
+    for (const coord of coords) {
+      sumLon += coord[0]
+      sumLat += coord[1]
+      count++
+    }
+    if (count > 0) {
+      return { lon: sumLon / count, lat: sumLat / count }
+    }
+  }
+  return null
+}
+
+async function loadConstructionNotices() {
+  try {
+    loadingNotices.value = true
+    const notices = await getConstructionNotices(0, 500)
+    constructionNotices.value = notices || []
+  } catch (e) {
+    console.error('Failed to load construction notices:', e)
+    constructionNotices.value = []
+  } finally {
+    loadingNotices.value = false
+  }
 }
 
 async function loadConstructionData() {
@@ -389,8 +499,13 @@ async function triggerConstructionUpdate() {
                   <div class="text-sm text-gray-800">
                     <div class="font-medium">{{ rec.props?.AP_NAME || rec.name }}</div>
                     <div class="text-xs text-gray-600 mt-0.5">{{ rec.props?.PURP || rec.addr }}</div>
+                    <div v-if="rec.props?.SDATE || rec.props?.EDATE" class="text-xs text-amber-600 mt-1">
+                      <span v-if="rec.props?.SDATE">{{ formatDate(rec.props.SDATE) }}</span>
+                      <span v-if="rec.props?.SDATE && rec.props?.EDATE"> 至 </span>
+                      <span v-if="rec.props?.EDATE">{{ formatDate(rec.props.EDATE) }}</span>
+                    </div>
                   </div>
-                  <div v-if="typeof rec.dist === 'number' && selectedCategory[place.id] === 'nearby'" class="text-xs text-gray-400 mt-1">
+                  <div v-if="typeof rec.dist === 'number'" class="text-xs text-gray-400 mt-1">
                     距離約 {{ formatDistance(rec.dist) }}
                   </div>
                 </div>
