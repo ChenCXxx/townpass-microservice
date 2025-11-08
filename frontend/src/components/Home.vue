@@ -533,7 +533,7 @@ function getFilteredRecommendations(place) {
       return []
     }
     
-    const noticesWithDistance = upcomingNotices.map(notice => {
+    let noticesWithDistance = upcomingNotices.map(notice => {
       let distance = null
       
       // 從 geometry 中提取座標
@@ -560,6 +560,38 @@ function getFilteredRecommendations(place) {
         notice: notice // 保存完整公告資料
       }
     })
+
+    const keywordCandidates = [
+      place.name,
+      place.address,
+      place.addr,
+      place.roadName,
+      place.routeStart,
+      place.routeEnd
+    ]
+      .map((value) => typeof value === 'string' ? value.trim().toLowerCase() : '')
+      .filter(Boolean)
+
+    if (keywordCandidates.length > 0) {
+      // 只保留公告內容中提到收藏名稱或相關標籤的項目
+      noticesWithDistance = noticesWithDistance.filter((item) => {
+        const searchableTexts = [
+          item.name,
+          item.addr,
+          item.props?.DIGADD,
+          item.props?.PURP,
+          item.notice?.name,
+          item.notice?.road,
+          item.notice?.type
+        ].filter((text) => typeof text === 'string')
+
+        if (searchableTexts.length === 0) return false
+
+        return keywordCandidates.some((keyword) =>
+          searchableTexts.some((text) => text.toLowerCase().includes(keyword))
+        )
+      })
+    }
     
     // 按距離排序（有距離的在前，然後按距離升序）
     noticesWithDistance.sort((a, b) => {
