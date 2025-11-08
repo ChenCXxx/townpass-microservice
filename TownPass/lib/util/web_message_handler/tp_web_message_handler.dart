@@ -78,9 +78,11 @@ class GetUserIdWebMessageHandler extends TPWebMessageHandler {
         debugPrint('✅ GetUserIdWebMessageHandler: sending user_id: $userId');
       }
       
-      final reply = replyWebMessage(
+      // 回復的 name 應該是 'user_id' 而不是 'get_user_id'
+      final reply = TPWebStringMessageReply(
+        name: 'user_id',  // 前端期望的消息名稱
         data: {'user_id': userId ?? ''},
-      );
+      ).message;
       debugPrint('📤 GetUserIdWebMessageHandler: sending reply: ${reply.data}');
       debugPrint('   Reply type: ${reply.type}');
       onReply?.call(reply);
@@ -89,9 +91,10 @@ class GetUserIdWebMessageHandler extends TPWebMessageHandler {
       debugPrint('❌ GetUserIdWebMessageHandler error: $e');
       debugPrint('   Stack trace: $stackTrace');
       // 即使出錯也發送回復，避免前端一直等待
-      onReply?.call(replyWebMessage(
+      onReply?.call(TPWebStringMessageReply(
+        name: 'user_id',  // 前端期望的消息名稱
         data: {'user_id': ''},
-      ));
+      ).message);
     }
   }
 }
