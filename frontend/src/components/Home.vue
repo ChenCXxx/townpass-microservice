@@ -489,13 +489,13 @@ function getEmptyRecommendationMessage(place, category) {
   if (category === 'upcoming') return '目前沒有未來施工公告'
   const threshold = place?.roadDistanceThreshold || ROAD_NOTICE_DISTANCE_M
   if (place?.type === 'road') {
-    return `此道路 ${threshold} 公尺內沒有施工資訊`
+    return `此道路沒有施工資訊`
   }
   if (place?.type === 'route') {
     const routeThreshold = place?.routeDistanceThreshold || ROUTE_NOTICE_DISTANCE_M
-    return `此路線 ${routeThreshold} 公尺內沒有施工資訊`
+    return `此路線沒有施工資訊`
   }
-  return '1 公里內沒有施工資訊'
+  return '附近 1 公里內沒有施工資訊'
 }
 
 function selectCategoryForPlace(placeId, category) {
@@ -742,16 +742,16 @@ async function triggerConstructionUpdate() {
           <div class="flex items-start gap-3 px-4 py-3">
             <button
               type="button"
-              class="flex-1 text-left"
+              class="flex-1 text-left w-full max-w-full overflow-hidden"
               @click="toggleFavoriteDetails(place.id)"
             >
-              <div class="flex items-start justify-between gap-2">
-                <div class="flex-1">
+              <div class="flex items-start gap-2">
+                <div class="flex-1 min-w-0">
                   <div class="flex items-center gap-2">
-                    <div class="text-sm font-semibold text-gray-800">{{ place.name }}</div>
+                    <span class="truncate text-sm font-semibold text-gray-800 basis-[60%] max-w-[60%]">{{ place.name }}</span>
                       <span
                         v-if="favoriteTypeBadges[place.type]"
-                        class="rounded-full px-2 py-0.5 text-[11px] font-medium"
+                        class="rounded-full px-2 py-0.5 text-[11px] font-medium shrink-0"
                         :class="favoriteTypeBadges[place.type]"
                       >
                         {{ place.type === 'road' ? '道路' : place.type === 'route' ? '路線' : '地點' }}
