@@ -6,8 +6,10 @@ from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 import logging
 import sys
+import asyncio
 from .database import Base, engine, SessionLocal
 from .routers.api import router
+from .routers.websocket import router as websocket_router, check_and_notify_all_users
 from .config import settings
 from .services.construction_scraper import update_construction_geojson_file
 from .services.notice_contruction import update_construction_notices
@@ -189,6 +191,25 @@ async def lifespan(app: FastAPI):
     )
     logger.info(f"Scheduled construction notices update: {settings.CONSTRUCTION_UPDATE_SCHEDULE}")
     
+    # 添加定期檢查並推送通知的任務（每5分鐘檢查一次）
+    def check_and_notify_sync():
+        """定期檢查並推送施工通知（同步包裝器）"""
+        try:
+            # 創建新的事件循環來運行異步函數
+            asyncio.run(check_and_notify_all_users())
+        except Exception as e:
+            logger.error(f"Error in check_and_notify: {e}", exc_info=True)
+    
+    # 使用 IntervalTrigger 每5分鐘執行一次
+    scheduler.add_job(
+        check_and_notify_sync,
+        trigger=IntervalTrigger(minutes=5),
+        id="construction_notification_check",
+        name="Check and notify construction alerts",
+        replace_existing=True
+    )
+    logger.info("Scheduled construction notification check: every 5 minutes")
+    
     scheduler.start()
     logger.info("=" * 60)
     logger.info("Application startup completed successfully!")
@@ -228,6 +249,7 @@ app.add_middleware(
 )
 
 app.include_router(router, prefix="/api", tags=["API"])
+app.include_router(websocket_router, tags=["WebSocket"])
 
 @app.get("/")
 def read_root():
