@@ -78,8 +78,8 @@ class FavoriteBase(BaseModel):
     road_distance_threshold: float | None = 15.0
     route_start: str | None = None
     route_end: str | None = None
-    route_start_coords: dict[str, float] | None = None
-    route_end_coords: dict[str, float] | None = None
+    route_start_coords: dict[str, Any] | None = None
+    route_end_coords: dict[str, Any] | None = None
     route_distance: float | None = None
     route_duration: float | None = None
     route_feature_collection: dict[str, Any] | None = None

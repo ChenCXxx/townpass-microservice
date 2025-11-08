@@ -954,7 +954,7 @@ async function toggleFavorite() {
       notification_enabled: false,
       distance_threshold: 100.0,
     }
-
+    console.log('POST /favorites payload:', JSON.parse(JSON.stringify(payload)));
     try {
       const saved = await createFavorite(payload, userId.value) // userId 現在是 UUID 字符串
       const normalized = normalizeFavorite(saved)
