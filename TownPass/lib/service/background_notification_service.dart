@@ -1,31 +1,54 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' show sin, cos, sqrt, asin;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:android_alarm_manager_plus/android_alarm_manager_plus.dart';
+import 'package:http/http.dart' as http;
 import 'notification_service.dart';
 
 /// 背景通知服務（使用 Android AlarmManager 實現週期檢查）
-/// 注意：由於 Flutter 限制，真正的背景任務需要在 Android 原生層實作
-/// 這裡提供基本的檢查邏輯，供前景或原生層呼叫
+/// 可在 App 關閉時持續運作
 class BackgroundNotificationService {
-  /// 初始化服務（預留給未來擴展）
+  static const int _alarmId = 0;
+  static const String _baseUrl = 'https://townpass.chencx.cc';
+
+  /// 初始化服務
   static Future<void> initialize() async {
-    // Android AlarmManager 需要在原生層設定
-    // 這裡只做 Dart 層的初始化
-    print('[BackgroundNotificationService] Initialized');
+    await AndroidAlarmManager.initialize();
+    print('[BackgroundNotificationService] AlarmManager initialized');
   }
 
-  /// 啟動週期性檢查（發送訊息給原生層）
+  /// 啟動週期性檢查（15 分鐘一次）
   static Future<void> startPeriodicCheck() async {
-    print('[BackgroundNotificationService] Start periodic check requested');
-    // 實際的週期任務會在原生 Android 層透過 AlarmManager 實作
-    // 這裡只做標記，表示使用者想要背景通知
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool('background_notification_enabled', true);
+    print('[BackgroundNotificationService] Starting periodic check (15 minutes)');
+    
+    // 取消舊的鬧鐘
+    await AndroidAlarmManager.cancel(_alarmId);
+    
+    // 設定新的週期鬧鐘：15 分鐘 = 15 * 60 * 1000 ms
+    final success = await AndroidAlarmManager.periodic(
+      const Duration(minutes: 15),
+      _alarmId,
+      _checkAndNotifyCallback,
+      exact: true,
+      wakeup: true,
+      rescheduleOnReboot: true,
+    );
+    
+    if (success) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('background_notification_enabled', true);
+      print('[BackgroundNotificationService] Periodic alarm set successfully');
+    } else {
+      print('[BackgroundNotificationService] Failed to set periodic alarm');
+    }
   }
 
   /// 停止週期性檢查
   static Future<void> stopPeriodicCheck() async {
-    print('[BackgroundNotificationService] Stop periodic check requested');
+    print('[BackgroundNotificationService] Stopping periodic check');
+    await AndroidAlarmManager.cancel(_alarmId);
+    
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('background_notification_enabled', false);
   }
@@ -36,7 +59,14 @@ class BackgroundNotificationService {
     await _checkAndNotify();
   }
 
-  /// 檢查邏輯：讀取收藏與通知設定，發送施工警報
+  /// AlarmManager 回調函數（必須是頂層函數或靜態方法）
+  @pragma('vm:entry-point')
+  static Future<void> _checkAndNotifyCallback() async {
+    print('[AlarmCallback] Triggered at ${DateTime.now()}');
+    await _checkAndNotify();
+  }
+
+  /// 檢查邏輯：讀取收藏與通知設定，查詢 API，發送施工警報
   static Future<void> _checkAndNotify() async {
     print('[BackgroundTask] Starting check...');
 
@@ -71,34 +101,102 @@ class BackgroundNotificationService {
       if (placeId == null) continue;
 
       final enabled = notifications[placeId] == true;
-      if (!enabled) continue;
-
-      final recommendations = fav['recommendations'] ?? [];
-      if (recommendations is! List) continue;
-
-      // 計算施工地點數量
-      int constructionCount = 0;
-      for (final rec in recommendations) {
-        if (rec is Map<String, dynamic>) {
-          final dsid = rec['dsid'];
-          final props = rec['props'];
-          if (dsid == 'construction' ||
-              (props is Map && (props['AP_NAME'] != null || props['PURP'] != null))) {
-            constructionCount++;
-          }
-        }
+      if (!enabled) {
+        print('[BackgroundTask] Notifications disabled for $placeId');
+        continue;
       }
 
-      if (constructionCount > 0) {
-        final placeName = fav['name'] ?? '收藏地點';
-        await NotificationService.showNotification(
-          title: '$placeName 附近施工資訊',
-          content: '此收藏 1 公里內有 $constructionCount 個施工地點',
-        );
-        print('[BackgroundTask] Notification sent for $placeName (construction: $constructionCount)');
+      final placeName = fav['name'] ?? '收藏地點';
+      final lng = fav['lng'];
+      final lat = fav['lat'];
+      
+      if (lng == null || lat == null) {
+        print('[BackgroundTask] Missing coordinates for $placeName');
+        continue;
+      }
+
+      // 從 API 查詢附近施工資訊
+      try {
+        final constructionCount = await _fetchNearbyConstructions(lng, lat);
+        
+        if (constructionCount > 0) {
+          await NotificationService.showNotification(
+            title: '$placeName 附近施工資訊',
+            content: '此收藏 1 公里內有 $constructionCount 個施工地點',
+          );
+          print('[BackgroundTask] Notification sent for $placeName (construction: $constructionCount)');
+        } else {
+          print('[BackgroundTask] No constructions near $placeName');
+        }
+      } catch (e) {
+        print('[BackgroundTask] Error checking $placeName: $e');
       }
     }
 
     print('[BackgroundTask] Check completed');
+  }
+
+  /// 查詢附近施工資訊
+  static Future<int> _fetchNearbyConstructions(double lng, double lat) async {
+    try {
+      final url = Uri.parse('$_baseUrl/api/construction/geojson');
+      final response = await http.get(url).timeout(const Duration(seconds: 10));
+      
+      if (response.statusCode != 200) {
+        print('[BackgroundTask] API error: ${response.statusCode}');
+        return 0;
+      }
+
+      final data = jsonDecode(response.body);
+      final features = data['features'] as List? ?? [];
+      
+      int count = 0;
+      for (final feature in features) {
+        if (feature is! Map<String, dynamic>) continue;
+        
+        final geometry = feature['geometry'];
+        if (geometry == null || geometry['coordinates'] == null) continue;
+        
+        final coords = geometry['coordinates'];
+        if (coords is! List || coords.length < 2) continue;
+        
+        final conLng = coords[0] as num?;
+        final conLat = coords[1] as num?;
+        if (conLng == null || conLat == null) continue;
+        
+        // 計算距離（簡單的經緯度距離）
+        final distance = _calculateDistance(lat, lng, conLat.toDouble(), conLng.toDouble());
+        if (distance <= 1.0) {
+          count++;
+        }
+      }
+      
+      return count;
+    } catch (e) {
+      print('[BackgroundTask] Failed to fetch constructions: $e');
+      return 0;
+    }
+  }
+
+  /// 計算兩點之間的距離（公里）
+  static double _calculateDistance(double lat1, double lng1, double lat2, double lng2) {
+    const double earthRadius = 6371.0; // 地球半徑（公里）
+    
+    final dLat = _toRadians(lat2 - lat1);
+    final dLng = _toRadians(lng2 - lng1);
+    final rLat1 = _toRadians(lat1);
+    final rLat2 = _toRadians(lat2);
+    
+    final a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(rLat1) * cos(rLat2) *
+        sin(dLng / 2) * sin(dLng / 2);
+    
+    final c = 2 * asin(sqrt(a));
+    
+    return earthRadius * c;
+  }
+
+  static double _toRadians(double degrees) {
+    return degrees * 3.141592653589793 / 180.0;
   }
 }
