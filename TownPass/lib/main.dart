@@ -9,7 +9,7 @@ import 'package:town_pass/service/notification_service.dart';
 import 'package:town_pass/service/package_service.dart';
 import 'package:town_pass/service/shared_preferences_service.dart';
 import 'package:town_pass/service/subscription_service.dart';
-import 'package:town_pass/service/watch_service.dart';
+import 'package:town_pass/service/background_notification_service.dart';
 import 'package:town_pass/util/tp_colors.dart';
 import 'package:town_pass/util/tp_route.dart';
 
@@ -22,6 +22,9 @@ void main() async {
   // FlutterNativeSplash.preserve(
   //   widgetsBinding: WidgetsFlutterBinding.ensureInitialized(),
   // );
+
+  // 初始化背景通知服務
+  await BackgroundNotificationService.initialize();
 
   await initServices();
 
@@ -37,7 +40,6 @@ Future<void> initServices() async {
   await Get.putAsync<SharedPreferencesService>(() async => await SharedPreferencesService().init());
   await Get.putAsync<GeoLocatorService>(() async => await GeoLocatorService().init());
   await Get.putAsync<NotificationService>(() async => await NotificationService().init());
-  await Get.putAsync<WatchService>(() async => await WatchService().init());
 
   Get.put<SubscriptionService>(SubscriptionService());
 }

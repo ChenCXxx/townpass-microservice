@@ -45,6 +45,7 @@ dependencies:
   get: ^4.6.6
   geolocator: ^13.0.1
   intl: any
+  workmanager: ^0.5.2
   image_picker: ^1.1.2
   json_annotation: ^4.9.0
   mobile_scanner: ^6.0.2

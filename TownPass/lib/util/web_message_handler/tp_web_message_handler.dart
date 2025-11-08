@@ -11,7 +11,6 @@ import 'package:town_pass/service/geo_locator_service.dart';
 import 'package:town_pass/service/notification_service.dart';
 import 'package:town_pass/service/shared_preferences_service.dart';
 import 'package:town_pass/service/subscription_service.dart';
-import 'package:town_pass/service/watch_service.dart';
 import 'package:town_pass/util/tp_button.dart';
 import 'package:town_pass/util/tp_dialog.dart';
 import 'package:town_pass/util/tp_route.dart';
@@ -283,76 +282,4 @@ class QRCodeScanMessageHandler extends TPWebMessageHandler {
   }
 }
 
-class WatchMessageHandler extends TPWebMessageHandler {
-  @override
-  String get name => 'watch';
-
-  @override
-  Future<void> handle({
-    required Object? message,
-    required WebUri? sourceOrigin,
-    required bool isMainFrame,
-    required Function(WebMessage replyWebMessage)? onReply,
-  }) async {
-    switch (message) {
-      case Object json when json is Map<String, dynamic>:
-        final id = json['id'] as String?;
-        final name = json['name'] as String?;
-        final lon = json['lon'] as num?;
-        final lat = json['lat'] as num?;
-
-        if (id != null && name != null && lon != null && lat != null) {
-          try {
-            final watchService = Get.find<WatchService>();
-            watchService.addWatch(
-              id: id,
-              name: name,
-              lon: lon.toDouble(),
-              lat: lat.toDouble(),
-            );
-            onReply?.call(replyWebMessage(data: true));
-          } catch (e) {
-            print('Error adding watch: $e');
-            onReply?.call(replyWebMessage(data: false));
-          }
-        } else {
-          onReply?.call(replyWebMessage(data: false));
-        }
-      default:
-        onReply?.call(replyWebMessage(data: false));
-    }
-  }
-}
-
-class UnwatchMessageHandler extends TPWebMessageHandler {
-  @override
-  String get name => 'unwatch';
-
-  @override
-  Future<void> handle({
-    required Object? message,
-    required WebUri? sourceOrigin,
-    required bool isMainFrame,
-    required Function(WebMessage replyWebMessage)? onReply,
-  }) async {
-    switch (message) {
-      case Object json when json is Map<String, dynamic>:
-        final id = json['id'] as String?;
-        if (id != null) {
-          try {
-            final watchService = Get.find<WatchService>();
-            watchService.removeWatch(id);
-            onReply?.call(replyWebMessage(data: true));
-          } catch (e) {
-            print('Error removing watch: $e');
-            onReply?.call(replyWebMessage(data: false));
-          }
-        } else {
-          onReply?.call(replyWebMessage(data: false));
-        }
-      default:
-        onReply?.call(replyWebMessage(data: false));
-    }
-  }
-}
 
