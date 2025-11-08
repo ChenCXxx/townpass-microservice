@@ -1,5 +1,7 @@
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:get/get.dart';
 import '../../service/background_notification_service.dart';
+import '../../service/construction_alert_service.dart';
 import '../web_message_handler/tp_web_message_handler.dart';
 
 /// 處理來自 WebView 的 watch 訊息（啟動背景監控）
@@ -21,6 +23,12 @@ class WatchMessageHandler extends TPWebMessageHandler {
       
       // 立即執行一次檢查
       await BackgroundNotificationService.executeImmediately();
+
+      // 啟動即時 GPS 監控
+      final alertService = Get.isRegistered<ConstructionAlertService>()
+          ? Get.find<ConstructionAlertService>()
+          : null;
+      await alertService?.startRealtimeWatch();
       
       print('[WatchMessageHandler] AlarmManager started (15 min interval)');
       onReply?.call(replyWebMessage(data: true));
@@ -47,6 +55,11 @@ class UnwatchMessageHandler extends TPWebMessageHandler {
     try {
       // 停止 AlarmManager 週期檢查
       await BackgroundNotificationService.stopPeriodicCheck();
+
+      final alertService = Get.isRegistered<ConstructionAlertService>()
+          ? Get.find<ConstructionAlertService>()
+          : null;
+      await alertService?.stopRealtimeWatch();
       
       print('[UnwatchMessageHandler] AlarmManager stopped');
       onReply?.call(replyWebMessage(data: true));

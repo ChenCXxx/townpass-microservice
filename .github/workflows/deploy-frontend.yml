@@ -2,7 +2,9 @@ name: Deploy Frontend to Firebase Hosting
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
+      - god_shield
     paths:
       - 'frontend/**'
       - '.github/workflows/deploy-frontend.yml'
@@ -21,7 +23,7 @@ concurrency:
 
 jobs:
   deploy:
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/god_shield')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -44,11 +46,23 @@ jobs:
       - name: Build
         run: pnpm build
 
-      - name: Firebase Deploy (live)
+      - name: Resolve Firebase channel
+        id: channel
+        run: |
+          if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            echo "channel=live" >> "$GITHUB_OUTPUT"
+          elif [[ "${GITHUB_REF}" == "refs/heads/god_shield" ]]; then
+            echo "channel=god_shield" >> "$GITHUB_OUTPUT"
+          else
+            echo "Unsupported branch ${GITHUB_REF}"
+            exit 1
+          fi
+
+      - name: Firebase Deploy
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SA }}
           projectId: ${{ secrets.PROJECT_ID }}
-          channelId: live
+          channelId: ${{ steps.channel.outputs.channel }}
           entryPoint: frontend

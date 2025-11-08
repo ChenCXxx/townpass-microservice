@@ -74,6 +74,11 @@ function handleTabSelect(tab) {
     router.push('/announcement')
     return
   }
+
+  if (tab === 'watch') {
+    router.push('/watch')
+    return
+  }
   
   // tab === 'map' 時不需要做任何事，因為已經在地圖頁面
 }

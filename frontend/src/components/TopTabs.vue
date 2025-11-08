@@ -39,5 +39,13 @@ function select(tab) {
       :class="props.active === 'recommend' ? 'text-blue-900 font-semibold border-b-2 border-blue-900' : 'text-gray-400'"
       @click.stop="select('recommend')"
     >收藏</button>
+    <!-- 偵測 -->
+    <button
+      type="button"
+      class="relative flex-1 py-3 text-center text-base cursor-pointer"
+      style="z-index: 101; position: relative;"
+      :class="props.active === 'watch' ? 'text-blue-900 font-semibold border-b-2 border-blue-900' : 'text-gray-400'"
+      @click.stop="select('watch')"
+    >偵測</button>
   </nav>
 </template>
