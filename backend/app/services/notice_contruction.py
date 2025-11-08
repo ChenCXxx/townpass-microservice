@@ -3,8 +3,10 @@ import re
 import json
 from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from typing import List, Dict, Any, Optional
 from datetime import date
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from ..models import ConstructionNotice
 import logging
 
@@ -104,12 +106,13 @@ def parse_xystring_to_geojson(xystring: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def fetch_coordinates_for_case(caseid: str) -> Optional[Dict[str, Any]]:
+def fetch_coordinates_for_case(caseid: str, http_session: requests.Session = None) -> Optional[Dict[str, Any]]:
     """
     從 API 獲取指定 caseid 的座標資料
     
     Args:
         caseid: 案件 ID
+        http_session: 可選的 requests.Session 用於連接復用
     
     Returns:
         包含座標資料的字典，如果獲取失敗則返回 None
@@ -119,7 +122,10 @@ def fetch_coordinates_for_case(caseid: str) -> Optional[Dict[str, Any]]:
     
     try:
         url = f"{COORDINATE_API_URL}?cmode=DIGPWORK&caseid={caseid}"
-        response = requests.get(url, timeout=5)  # 減少超時時間
+        if http_session:
+            response = http_session.get(url, timeout=5)
+        else:
+            response = requests.get(url, timeout=5)
         response.raise_for_status()
         
         data = response.json()
@@ -132,6 +138,28 @@ def fetch_coordinates_for_case(caseid: str) -> Optional[Dict[str, Any]]:
     except Exception as e:
         logger.debug(f"Failed to fetch coordinates for caseid {caseid}: {e}")
         return None
+
+
+def fetch_geometry_for_notice(notice_data: Dict[str, Any], http_session: requests.Session) -> Optional[Dict[str, Any]]:
+    """
+    為單個 notice 獲取 geometry（用於並行處理）
+    
+    Args:
+        notice_data: notice 資料字典
+        http_session: requests.Session 用於連接復用
+    
+    Returns:
+        (notice_data, geometry) 元組，如果獲取失敗則 geometry 為 None
+    """
+    caseid = extract_caseid_from_url(notice_data.get('url')) if notice_data.get('url') else None
+    if not caseid:
+        return None
+    
+    coord_data = fetch_coordinates_for_case(caseid, http_session)
+    if coord_data and coord_data.get('XYSTRING'):
+        geometry = parse_xystring_to_geojson(coord_data['XYSTRING'])
+        return geometry
+    return None
 
 
 def parse_roc_date_range(date_range_str: str) -> tuple[date | None, date | None]:
@@ -311,7 +339,7 @@ def scrape_construction_notices(session: Session, max_pages: int = None) -> List
 
 def save_construction_notices(session: Session, notices: List[Dict[str, Any]], clear_existing: bool = False) -> int:
     """
-    將爬取的資料保存到資料庫
+    將爬取的資料保存到資料庫（優化版本：批量查詢 + 並行獲取座標）
     
     Args:
         session: 資料庫 session
@@ -327,36 +355,101 @@ def save_construction_notices(session: Session, notices: List[Dict[str, Any]], c
             session.commit()
             logger.info("已清除現有資料")
         
+        if not notices:
+            return 0
+        
+        total = len(notices)
+        logger.info(f"開始處理 {total} 筆資料...")
+        
+        # 批量查詢所有已存在的記錄（一次性查詢，避免 N+1 問題）
+        urls = [n.get('url') for n in notices if n.get('url')]
+        names = [n.get('name') for n in notices if n.get('name')]
+        
+        existing_map = {}
+        if urls:
+            existing_by_url = session.query(ConstructionNotice).filter(
+                ConstructionNotice.url.in_(urls)
+            ).all()
+            for notice in existing_by_url:
+                if notice.url:
+                    existing_map[('url', notice.url)] = notice
+        
+        if names:
+            existing_by_name = session.query(ConstructionNotice).filter(
+                ConstructionNotice.name.in_(names)
+            ).all()
+            for notice in existing_by_name:
+                if notice.name:
+                    # 优先使用 URL 作为 key，如果没有 URL 或 URL 已存在，则使用 name
+                    if notice.url and ('url', notice.url) not in existing_map:
+                        existing_map[('url', notice.url)] = notice
+                    elif ('name', notice.name) not in existing_map:
+                        existing_map[('name', notice.name)] = notice
+        
+        logger.info(f"找到 {len(existing_map)} 筆已存在的記錄")
+        
+        # 找出需要獲取座標的 notices（不存在或沒有 geometry）
+        notices_needing_geometry = []
+        for idx, notice_data in enumerate(notices):
+            key = None
+            if notice_data.get('url'):
+                key = ('url', notice_data['url'])
+            elif notice_data.get('name'):
+                key = ('name', notice_data['name'])
+            
+            existing = existing_map.get(key) if key else None
+            if not existing or not existing.geometry:
+                notices_needing_geometry.append((idx, notice_data))
+        
+        logger.info(f"需要獲取座標的記錄: {len(notices_needing_geometry)} 筆")
+        
+        # 並行獲取座標（使用線程池）
+        geometry_map = {}
+        if notices_needing_geometry:
+            http_session = requests.Session()
+            max_workers = min(10, len(notices_needing_geometry))  # 最多 10 個並行請求
+            
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # 提交所有任務
+                future_to_idx = {
+                    executor.submit(fetch_geometry_for_notice, notice_data, http_session): idx
+                    for idx, notice_data in notices_needing_geometry
+                }
+                
+                # 收集結果
+                completed = 0
+                for future in as_completed(future_to_idx):
+                    idx = future_to_idx[future]
+                    completed += 1
+                    if completed % 10 == 0 or completed == len(notices_needing_geometry):
+                        logger.info(f"獲取座標進度: {completed}/{len(notices_needing_geometry)}")
+                    
+                    try:
+                        geometry = future.result()
+                        if geometry:
+                            geometry_map[idx] = geometry
+                    except Exception as e:
+                        logger.debug(f"獲取座標失敗 (index {idx}): {e}")
+            
+            http_session.close()
+            logger.info(f"成功獲取 {len(geometry_map)} 筆座標")
+        
+        # 批量保存資料
         saved_count = 0
         updated_count = 0
-        total = len(notices)
         
-        for idx, notice_data in enumerate(notices, 1):
-            # 每處理 10 筆顯示一次進度
-            if idx % 10 == 0 or idx == total:
-                logger.info(f"處理進度: {idx}/{total}")
+        for idx, notice_data in enumerate(notices):
+            if idx % 50 == 0 and idx > 0:
+                session.commit()  # 每 50 筆提交一次，減少內存占用
             
-            # 檢查是否已存在（根據 URL 或 name）
-            existing = None
+            key = None
             if notice_data.get('url'):
-                existing = session.query(ConstructionNotice).filter(
-                    ConstructionNotice.url == notice_data['url']
-                ).first()
+                key = ('url', notice_data['url'])
             elif notice_data.get('name'):
-                existing = session.query(ConstructionNotice).filter(
-                    ConstructionNotice.name == notice_data['name']
-                ).first()
+                key = ('name', notice_data['name'])
             
-            # 獲取座標（僅在需要時）
-            geometry = None
-            if not existing or not existing.geometry:
-                caseid = extract_caseid_from_url(notice_data.get('url')) if notice_data.get('url') else None
-                if caseid:
-                    coord_data = fetch_coordinates_for_case(caseid)
-                    if coord_data and coord_data.get('XYSTRING'):
-                        geometry = parse_xystring_to_geojson(coord_data['XYSTRING'])
-                        if geometry:
-                            logger.debug(f"Successfully parsed coordinates for caseid {caseid}")
+            existing = existing_map.get(key) if key else None
+            geometry = geometry_map.get(idx)
             
             if not existing:
                 notice = ConstructionNotice(
@@ -379,7 +472,7 @@ def save_construction_notices(session: Session, notices: List[Dict[str, Any]], c
                     updated_count += 1
         
         session.commit()
-        logger.info(f"成功保存 {saved_count} 筆新資料")
+        logger.info(f"成功保存 {saved_count} 筆新資料，更新 {updated_count} 筆座標")
         return saved_count
         
     except Exception as e:
@@ -425,42 +518,53 @@ def update_missing_geometries(session: Session) -> Dict[str, Any]:
         
         logger.info(f"發現 {len(notices_without_geometry)} 筆缺少 geometry 的記錄，開始更新...")
         
+        # 並行獲取座標
+        http_session = requests.Session()
+        max_workers = min(10, len(notices_without_geometry))
+        
+        def fetch_geometry_for_existing_notice(notice):
+            """為已存在的 notice 獲取 geometry"""
+            caseid = extract_caseid_from_url(notice.url) if notice.url else None
+            if not caseid:
+                return None, None
+            
+            coord_data = fetch_coordinates_for_case(caseid, http_session)
+            if coord_data and coord_data.get('XYSTRING'):
+                geometry = parse_xystring_to_geojson(coord_data['XYSTRING'])
+                return notice, geometry
+            return notice, None
+        
         updated_count = 0
         failed_count = 0
         total = len(notices_without_geometry)
         
-        for idx, notice in enumerate(notices_without_geometry, 1):
-            # 每處理 10 筆顯示一次進度
-            if idx % 10 == 0 or idx == total:
-                logger.info(f"更新 geometry 進度: {idx}/{total}")
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # 提交所有任務
+            future_to_notice = {
+                executor.submit(fetch_geometry_for_existing_notice, notice): notice
+                for notice in notices_without_geometry
+            }
             
-            # 從 URL 提取 caseid
-            caseid = extract_caseid_from_url(notice.url) if notice.url else None
-            
-            if not caseid:
-                logger.debug(f"無法從 URL 提取 caseid: {notice.url}")
-                failed_count += 1
-                continue
-            
-            # 獲取座標資料
-            coord_data = fetch_coordinates_for_case(caseid)
-            if not coord_data or not coord_data.get('XYSTRING'):
-                logger.debug(f"無法獲取 caseid {caseid} 的座標資料")
-                failed_count += 1
-                continue
-            
-            # 轉換為 GeoJSON
-            geometry = parse_xystring_to_geojson(coord_data['XYSTRING'])
-            if not geometry:
-                logger.debug(f"無法解析 caseid {caseid} 的座標字串")
-                failed_count += 1
-                continue
-            
-            # 更新記錄
-            notice.geometry = geometry
-            session.add(notice)
-            updated_count += 1
+            # 收集結果並更新
+            completed = 0
+            for future in as_completed(future_to_notice):
+                completed += 1
+                if completed % 10 == 0 or completed == total:
+                    logger.info(f"更新 geometry 進度: {completed}/{total}")
+                
+                try:
+                    notice, geometry = future.result()
+                    if geometry:
+                        notice.geometry = geometry
+                        session.add(notice)
+                        updated_count += 1
+                    else:
+                        failed_count += 1
+                except Exception as e:
+                    logger.debug(f"獲取座標失敗: {e}")
+                    failed_count += 1
         
+        http_session.close()
         session.commit()
         logger.info(f"成功更新 {updated_count} 筆記錄的 geometry，{failed_count} 筆失敗")
         
