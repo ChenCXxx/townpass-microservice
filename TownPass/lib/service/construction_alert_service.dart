@@ -23,8 +23,8 @@ class ConstructionAlertService extends GetxService {
   StreamSubscription<Position>? _positionSubscription;
   Timer? _refreshTimer;
   List<dynamic> _features = [];
-  DateTime? _lastSpokenAt;
   final Map<String, DateTime> _recentAnnouncements = {};
+  final Map<String, DateTime> _voiceHistory = {};
 
   bool get isRunning => _positionSubscription != null;
 
@@ -73,7 +73,7 @@ class ConstructionAlertService extends GetxService {
     _refreshTimer = null;
 
     _recentAnnouncements.clear();
-    _lastSpokenAt = null;
+    _voiceHistory.clear();
     await _tts.stop();
     print('[ConstructionAlertService] Real-time monitoring stopped');
   }
@@ -116,7 +116,7 @@ class ConstructionAlertService extends GetxService {
         return;
       }
 
-      final body = jsonDecode(response.body);
+      final body = jsonDecode(utf8.decode(response.bodyBytes));
       final features = body['features'];
       if (features is List) {
         _features = features;
@@ -222,18 +222,24 @@ class ConstructionAlertService extends GetxService {
       content: '$content，請注意行車安全',
     );
 
-    final cooldownRemaining =
-        _lastSpokenAt == null ? Duration.zero : now.difference(_lastSpokenAt!);
-    if (_lastSpokenAt == null || cooldownRemaining > _voiceCooldown) {
-      print('[ConstructionAlertService] TTS speak start');
-      await _tts.stop();
-      await _tts.speak('前方$topNames有施工，請放慢速度注意安全');
-      _lastSpokenAt = now;
-      print('[ConstructionAlertService] TTS speak done');
-    } else {
-      final remain = _voiceCooldown - cooldownRemaining;
-      print('[ConstructionAlertService] Skip TTS, cooldown ${remain.inSeconds}s left');
+    final speakTargets = hits.where((hit) {
+      final last = _voiceHistory[hit.id];
+      return last == null || now.difference(last) > _voiceCooldown;
+    }).toList();
+
+    if (speakTargets.isEmpty) {
+      print('[ConstructionAlertService] Skip TTS, all targets in cooldown');
+      return;
     }
+
+    final speakNames = speakTargets.map((hit) => hit.name).join('、');
+    print('[ConstructionAlertService] TTS speak start for $speakNames');
+    await _tts.stop();
+    await _tts.speak('前方$speakNames有施工，請放慢速度注意安全');
+    for (final hit in speakTargets) {
+      _voiceHistory[hit.id] = now;
+    }
+    print('[ConstructionAlertService] TTS speak done');
   }
 
   LocationSettings _buildLocationSettings() {

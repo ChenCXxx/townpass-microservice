@@ -149,7 +149,7 @@ class BackgroundNotificationService {
         return 0;
       }
 
-      final data = jsonDecode(response.body);
+      final data = jsonDecode(utf8.decode(response.bodyBytes));
       final features = data['features'] as List? ?? [];
       
       int count = 0;
