@@ -113,7 +113,6 @@ def fetch_construction_geojson() -> Dict[str, Any]:
     
     # Get app key
     app_key = get_app_key()
-    logger.info("App key retrieved successfully")
     
     # Fetch data
     data = get_app_work(USER_ID, app_key)

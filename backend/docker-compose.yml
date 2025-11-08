@@ -45,6 +45,7 @@ services:
       - "8000:8000"
     volumes:
       - ./data:/app/data
+      - ./app:/app/app
 
 volumes:
   pgdata:

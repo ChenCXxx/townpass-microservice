@@ -4,12 +4,20 @@ from contextlib import asynccontextmanager
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 import logging
+import sys
 from .database import Base, engine
 from .routers.api import router
 from .config import settings
 from .services.construction_scraper import update_construction_geojson_file
 import os
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s: %(message)s",
+    # datefmt="%H:%M:%S",
+    stream=sys.stdout
+)
 logger = logging.getLogger(__name__)
 
 # Initialize scheduler
@@ -32,18 +40,28 @@ def scheduled_update():
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events"""
     # Startup
-    logger.info("Starting up...")
+    logger.info("=" * 60)
+    logger.info("Application starting up...")
+    logger.info("=" * 60)
     
     # Ensure data directory exists
     data_dir = os.path.dirname(settings.CONSTRUCTION_GEOJSON_PATH)
     os.makedirs(data_dir, exist_ok=True)
+    logger.info(f"Data directory ensured: {data_dir}")
     
-    # Run initial update on startup (create/update file)
+    # Run initial update on startup (create/update file) - BLOCKING
+    # This must complete before the application accepts requests
     logger.info("Running initial construction data update on startup...")
     try:
-        update_construction_geojson_file(settings.CONSTRUCTION_GEOJSON_PATH)
+        success = update_construction_geojson_file(settings.CONSTRUCTION_GEOJSON_PATH)
+        if success:
+            logger.info("Initial construction data update completed successfully")
+        else:
+            logger.error("Initial construction data update failed (check logs above for details)")
+            logger.warning("Application will continue to start, but construction data may be unavailable")
     except Exception as e:
-        logger.error(f"Initial update failed: {e}", exc_info=True)
+        logger.error(f"Initial update failed with exception: {e}", exc_info=True)
+        logger.warning("Application will continue to start, but construction data may be unavailable")
     
     # Setup scheduled task
     # Parse cron schedule: "minute hour day month day_of_week"
@@ -76,7 +94,9 @@ async def lifespan(app: FastAPI):
         )
     
     scheduler.start()
-    logger.info("Scheduler started")
+    logger.info("=" * 60)
+    logger.info("Application startup completed successfully!")
+    logger.info("=" * 60)
     
     yield
     
