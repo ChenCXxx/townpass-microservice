@@ -67,6 +67,27 @@ function computeBounds(geo) {
   return bounds
 }
 
+// 創建並顯示 popup
+function createMapPopup(properties, datasetId, lngLat) {
+  if (!map) return null
+  
+  const container = document.createElement('div')
+  const app = createApp(MapPopup, { properties, datasetId })
+  app.mount(container)
+  
+  const popup = new mapboxgl.Popup({
+    offset: 8,
+    className: 'inset-card-popup'
+  })
+    .setLngLat(lngLat)
+    .setDOMContent(container)
+    .addTo(map)
+  
+  popup.on('close', () => app.unmount())
+  
+  return popup
+}
+
 function attachPopupInteraction(layerId, datasetId) {
   map.on('mouseenter', layerId, () => { map.getCanvas().style.cursor = 'pointer' })
   map.on('mouseleave', layerId, () => { map.getCanvas().style.cursor = '' })
@@ -74,14 +95,7 @@ function attachPopupInteraction(layerId, datasetId) {
     const feature = e?.features?.[0]
     if (!feature) return
     const props = feature.properties || {}
-    const container = document.createElement('div')
-    const app = createApp(MapPopup, { properties: props, datasetId: datasetId })
-    app.mount(container)
-    const popup = new mapboxgl.Popup({ offset: 8 })
-      .setLngLat(e.lngLat)
-      .setDOMContent(container)
-      .addTo(map)
-    popup.on('close', () => app.unmount())
+    createMapPopup(props, datasetId, e.lngLat)
   })
 }
 
@@ -99,16 +113,7 @@ function showNearbyItemPopup(item) {
   // 創建並顯示 popup
   const props = item.props || {}
   const datasetId = item.dsid || 'attraction' // 從 item 中取得資料集 ID
-  const container = document.createElement('div')
-  const app = createApp(MapPopup, { properties: props, datasetId: datasetId })
-  app.mount(container)
-  
-  const popup = new mapboxgl.Popup({ offset: 8 })
-    .setLngLat([item.lon, item.lat])
-    .setDOMContent(container)
-    .addTo(map)
-  
-  popup.on('close', () => app.unmount())
+  createMapPopup(props, datasetId, [item.lon, item.lat])
 }
 
 async function ensureDatasetLoaded(ds) {

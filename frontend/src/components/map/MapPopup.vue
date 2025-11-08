@@ -57,18 +57,46 @@ const displayFields = computed(() => {
 </script>
 
 <template>
-  <div class="min-w-[240px] max-w-[320px] p-2">
-    <div v-if="displayFields.length === 0">無屬性資料</div>
-    <div v-else class="space-y-1">
-      <div v-for="field in displayFields" :key="field.fieldKey" class="flex gap-2">
-        <div class="min-w-[88px] text-gray-500">{{ field.displayName }}：</div>
-        <div class="text-gray-900 wrap-break-words">{{ formatValue(field.value) }}</div>
+  <div class="bg-white rounded-lg shadow-lg border border-gray-200 overflow-hidden">
+    <div v-if="displayFields.length === 0" class="p-4 text-center text-gray-500 text-sm">
+      無屬性資料
+    </div>
+    <div v-else class="divide-y divide-gray-100">
+      <div v-for="field in displayFields" :key="field.fieldKey" class="px-4 py-2.5 hover:bg-gray-50 transition-colors">
+        <div class="flex gap-3 min-w-0">
+          <div class="min-w-[88px] text-gray-600 text-sm font-medium shrink-0">
+            {{ field.displayName }}
+          </div>
+          <div class="text-gray-900 text-sm wrap-break-word flex-1 min-w-0">{{ formatValue(field.value) }}</div>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
-<style scoped>
+<style>
+.inset-card-popup .mapboxgl-popup-content{
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.inset-card-popup .mapboxgl-popup-tip{
+  display: none;
+}
+
+.inset-card-popup .mapboxgl-popup-close-button{
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  width: 24px; height: 24px; line-height: 24px;
+  border-radius: 9999px;
+  background: #fff;
+  box-shadow: 0 2px 6px rgba(0,0,0,.15);
+  color: #111;
+}
 </style>
 
 

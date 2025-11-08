@@ -16,9 +16,7 @@
   },
   "construction": {
     "場地名稱": "AP_NAME",
-    "用途": "PURP",
-    "行政區": "行政區",
-    "地址": "地址"
+    "用途": "PURP"
   },
   "narrow_street": {
     "巷弄名稱": "alley_name",
