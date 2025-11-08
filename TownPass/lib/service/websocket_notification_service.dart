@@ -49,6 +49,9 @@ class WebSocketNotificationService extends GetxService {
       _isConnected = true;
       _isConnecting = false;
       
+      // 重置重連計數
+      _resetReconnectAttempts();
+      
       print('[WebSocketNotificationService] Connected successfully');
       
       // 開始監聽訊息
@@ -59,8 +62,8 @@ class WebSocketNotificationService extends GetxService {
         cancelOnError: false,
       );
       
-      // 啟動心跳定時器（每30秒發送一次ping）
-      _heartbeatTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      // 啟動心跳定時器（每5秒發送一次ping）
+      _heartbeatTimer = Timer.periodic(const Duration(seconds: 5), (_) {
         _sendPing();
       });
       
@@ -79,11 +82,14 @@ class WebSocketNotificationService extends GetxService {
   }
   
   /// 斷開連接
-  Future<void> disconnect() async {
+  Future<void> disconnect({bool shouldReconnect = false}) async {
     print('[WebSocketNotificationService] Disconnecting...');
     
     _heartbeatTimer?.cancel();
     _heartbeatTimer = null;
+    
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
     
     await _subscription?.cancel();
     _subscription = null;
@@ -93,6 +99,10 @@ class WebSocketNotificationService extends GetxService {
     
     _isConnected = false;
     _isConnecting = false;
+    
+    if (!shouldReconnect) {
+      _resetReconnectAttempts();
+    }
     
     print('[WebSocketNotificationService] Disconnected');
   }
@@ -165,12 +175,8 @@ class WebSocketNotificationService extends GetxService {
     print('[WebSocketNotificationService] Error: $error');
     _isConnected = false;
     
-    // 嘗試重連
-    Future.delayed(const Duration(seconds: 5), () {
-      if (!_isConnected && !_isConnecting) {
-        connect();
-      }
-    });
+    // 嘗試重連（使用指數退避）
+    _reconnectWithBackoff();
   }
   
   /// 處理斷開連接
@@ -178,12 +184,37 @@ class WebSocketNotificationService extends GetxService {
     print('[WebSocketNotificationService] Connection closed');
     _isConnected = false;
     
-    // 嘗試重連
-    Future.delayed(const Duration(seconds: 5), () {
+    // 嘗試重連（使用指數退避）
+    _reconnectWithBackoff();
+  }
+  
+  int _reconnectAttempts = 0;
+  Timer? _reconnectTimer;
+  
+  /// 使用指數退避策略重連
+  void _reconnectWithBackoff() {
+    _reconnectTimer?.cancel();
+    
+    // 計算重連延遲：5秒、10秒、20秒...最多60秒
+    final delaySeconds = (_reconnectAttempts < 3) 
+        ? 5 * (1 << _reconnectAttempts) 
+        : 60;
+    
+    print('[WebSocketNotificationService] Will reconnect in $delaySeconds seconds (attempt ${_reconnectAttempts + 1})');
+    
+    _reconnectTimer = Timer(Duration(seconds: delaySeconds), () {
       if (!_isConnected && !_isConnecting) {
+        _reconnectAttempts++;
         connect();
       }
     });
+  }
+  
+  /// 重置重連計數（連接成功後調用）
+  void _resetReconnectAttempts() {
+    _reconnectAttempts = 0;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
   }
   
   /// 發送心跳（ping）
@@ -191,15 +222,27 @@ class WebSocketNotificationService extends GetxService {
     if (_channel != null && _isConnected) {
       try {
         _channel!.sink.add(jsonEncode({'type': 'ping'}));
+        print('[WebSocketNotificationService] Sent ping');
       } catch (e) {
         print('[WebSocketNotificationService] Failed to send ping: $e');
+        // 如果發送失敗，標記為未連接並嘗試重連
+        _isConnected = false;
+        _reconnectWithBackoff();
+      }
+    } else {
+      // 如果連接狀態不正確，嘗試重連
+      if (!_isConnecting) {
+        print('[WebSocketNotificationService] Connection lost, attempting reconnect...');
+        _isConnected = false;
+        _reconnectWithBackoff();
       }
     }
   }
   
   @override
   void onClose() {
-    disconnect();
+    // 服務關閉時才真正斷開連接，不自動重連
+    disconnect(shouldReconnect: false);
     super.onClose();
   }
 }

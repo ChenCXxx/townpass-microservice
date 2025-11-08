@@ -191,24 +191,27 @@ async def lifespan(app: FastAPI):
     )
     logger.info(f"Scheduled construction notices update: {settings.CONSTRUCTION_UPDATE_SCHEDULE}")
     
-    # 添加定期檢查並推送通知的任務（每5分鐘檢查一次）
-    def check_and_notify_sync():
-        """定期檢查並推送施工通知（同步包裝器）"""
+    # 添加定期檢查並推送通知的任務（每5秒檢查一次）
+    # 取得目前的事件迴圈，讓 WebSocket 推播在同一個 loop 中執行，避免跨執行緒存取
+    loop = asyncio.get_running_loop()
+
+    def check_and_notify_async_safe():
+        """在主事件迴圈中執行推播檢查，確保 WebSocket 操作 thread-safe"""
         try:
-            # 創建新的事件循環來運行異步函數
-            asyncio.run(check_and_notify_all_users())
+            future = asyncio.run_coroutine_threadsafe(check_and_notify_all_users(), loop)
+            future.result()
         except Exception as e:
-            logger.error(f"Error in check_and_notify: {e}", exc_info=True)
-    
-    # 使用 IntervalTrigger 每5分鐘執行一次
+            logger.error(f"Error running check_and_notify_all_users in event loop: {e}", exc_info=True)
+
+    # 使用 IntervalTrigger 每 5 秒執行一次
     scheduler.add_job(
-        check_and_notify_sync,
-        trigger=IntervalTrigger(minutes=5),
+        check_and_notify_async_safe,
+        trigger=IntervalTrigger(seconds=5),
         id="construction_notification_check",
         name="Check and notify construction alerts",
         replace_existing=True
     )
-    logger.info("Scheduled construction notification check: every 5 minutes")
+    logger.info("Scheduled construction notification check: every 5 seconds")
     
     scheduler.start()
     logger.info("=" * 60)

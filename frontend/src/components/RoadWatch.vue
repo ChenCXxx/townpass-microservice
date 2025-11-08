@@ -175,8 +175,8 @@ function updateNearbySites() {
     const props = feature?.properties ?? {}
     points.push({
       id: feature?.id ?? props?.AC_NO ?? `${conLat},${conLon}`,
-      name: props?.DIGADD || props?.['場地名稱'] || props?.ROAD || props?.ROAD_NAME || '施工地點',
-      address: props?.PURP || props?.['地址'] || props?.ROAD_NAME || '',
+      name: props?.DIGADD || props?.AP_ADDR || props?.['場地名稱'] || props?.PURP || '施工地點',
+      company: props?.AP_NAME || props?.TC_NA || props?.ROAD || props?.ROAD_NAME || '',
       distance,
     })
   }
@@ -285,14 +285,14 @@ function formatDistance(meters) {
 
       <div class="mt-4 flex flex-col gap-4">
         <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-          <div class="flex items-center justify-between">
+          <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p class="text-sm text-slate-500">路上偵測狀態</p>
               <p class="text-xl font-semibold text-slate-900">{{ statusText }}</p>
               <p class="text-xs text-slate-500">{{ statusDetail }}</p>
             </div>
             <button
-              class="rounded-full px-4 py-2 text-sm font-semibold text-white"
+              class="w-full rounded-full px-4 py-2 text-sm font-semibold text-white sm:w-auto"
               :class="trackingEnabled ? 'bg-rose-500 hover:bg-rose-600' : 'bg-blue-900 hover:bg-blue-800'"
               @click="handleToggle"
             >
@@ -316,8 +316,8 @@ function formatDistance(meters) {
             </div>
           </div>
 
-          <div class="mt-4 flex items-center justify-between text-sm text-slate-500">
-            <span>資料來源：台北市道路挖掘管理系統</span>
+          <div class="mt-4 flex flex-col gap-2 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+            <span class="truncate">資料來源：台北市道路挖掘管理系統</span>
             <button
               class="text-blue-900 underline decoration-dashed underline-offset-4"
               @click="loadConstructionData"
@@ -351,11 +351,11 @@ function formatDistance(meters) {
               :key="site.id"
               class="py-3"
             >
-              <div class="flex items-center justify-between text-sm">
-                <span class="font-semibold text-slate-900">{{ site.name }}</span>
-                <span class="text-rose-500 font-semibold">{{ formatDistance(site.distance) }}</span>
+              <div class="flex items-center justify-between gap-2 text-sm">
+                <span class="min-w-0 flex-1 truncate font-semibold text-slate-900">{{ site.name }}</span>
+                <span class="shrink-0 text-rose-500 font-semibold">{{ formatDistance(site.distance) }}</span>
               </div>
-              <p v-if="site.address" class="mt-1 text-xs text-slate-500">{{ site.address }}</p>
+              <p v-if="site.company" class="mt-1 text-xs text-slate-500 line-clamp-2">{{ site.company }}</p>
             </li>
           </ul>
         </div>

@@ -52,8 +52,62 @@ Future<void> initServices() async {
   wsService.connect();
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    super.didChangeAppLifecycleState(state);
+    
+    // 獲取 WebSocket 服務
+    if (Get.isRegistered<WebSocketNotificationService>()) {
+      final wsService = Get.find<WebSocketNotificationService>();
+      
+      switch (state) {
+        case AppLifecycleState.resumed:
+          // 應用恢復到前景，確保連接
+          print('[MyApp] App resumed, checking WebSocket connection');
+          if (!wsService.isConnected) {
+            print('[MyApp] WebSocket not connected, reconnecting...');
+            wsService.connect();
+          }
+          break;
+        case AppLifecycleState.paused:
+          // 應用進入背景，保持連接（不關閉）
+          print('[MyApp] App paused, keeping WebSocket connection alive');
+          break;
+        case AppLifecycleState.inactive:
+          // 應用處於非活動狀態
+          print('[MyApp] App inactive');
+          break;
+        case AppLifecycleState.detached:
+          // 應用即將終止
+          print('[MyApp] App detached');
+          break;
+        case AppLifecycleState.hidden:
+          // 應用隱藏（某些平台）
+          print('[MyApp] App hidden');
+          break;
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
