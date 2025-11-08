@@ -205,7 +205,7 @@ function removeFavoriteById(id) {
   saveFavorites(next)
 }
 
-function toggleSelectedPlaceFavorite() {
+async function toggleSelectedPlaceFavorite() {
   if (!selectedPlace.value) {
     alert('請先搜尋地點')
     return
@@ -216,10 +216,15 @@ function toggleSelectedPlaceFavorite() {
     return
   }
 
+  // 確保所有資料集都已載入
+  for (const ds of datasets.value) {
+    await ensureDatasetLoaded(ds)
+  }
+
   const nearby = collectNearbyPoints(selectedPlace.value.lon, selectedPlace.value.lat, {
     respectVisibility: false,
     respectDistrict: false,
-    limit: 5,
+    limit: 50,
   })
 
   const next = [
