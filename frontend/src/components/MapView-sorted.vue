@@ -657,7 +657,7 @@ function collectNearbyPoints(lon, lat, options = {}) {
         let name = f?.properties?.['地點名稱'] || f?.properties?.['場地名稱'] || '(未命名)'
         let addr = f?.properties?.['地址'] || ''
         if (ds.id === 'construction') {
-          const apName = f?.properties?.['AP_NAME'] || f?.properties?.['場地名稱'] || '(未命名)'
+          const apName = f?.properties?.['DIGADD'] || f?.properties?.['場地名稱'] || '(未命名)'
           const purp = f?.properties?.['PURP'] || f?.properties?.['地址'] || ''
           name = apName
           addr = purp
@@ -743,7 +743,7 @@ function collectRoadConstructionMatches(featureCollection, maxDistance = ROAD_CO
     }
     if (minDist <= maxDistance) {
       const props = feature.properties || {}
-      let name = props['AP_NAME'] || props['場地名稱'] || props['name'] || '(未命名)'
+      let name = props['DIGADD'] || props['場地名稱'] || props['name'] || '(未命名)'
       let addr = props['PURP'] || props['地址'] || props['road'] || ''
       results.push({
         dsid: 'construction',

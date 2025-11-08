@@ -175,7 +175,7 @@ function updateNearbySites() {
     const props = feature?.properties ?? {}
     points.push({
       id: feature?.id ?? props?.AC_NO ?? `${conLat},${conLon}`,
-      name: props?.AP_NAME || props?.['場地名稱'] || props?.ROAD || props?.ROAD_NAME || '施工地點',
+      name: props?.DIGADD || props?.['場地名稱'] || props?.ROAD || props?.ROAD_NAME || '施工地點',
       address: props?.PURP || props?.['地址'] || props?.ROAD_NAME || '',
       distance,
     })
