@@ -23,7 +23,7 @@ const searchText = ref('')
 const roadSearchText = ref('')
 // 行政區篩選已移除，改用資料集顯示切換
 const selectedDistrict = ref('')   // 保留但不再顯示 UI（若未來需要可再啟用）
-const enabledDatasets = ref(['attraction', 'construction', 'narrow_street']) // 已啟用的資料集 ID 陣列
+const enabledDatasets = ref(['construction', 'narrow_street']) // 已啟用的資料集 ID 陣列（景點僅供搜尋用）
 const showNearby = ref(false)
 const nearbyList = ref([])
 const selectedNearbyItem = ref(null) // 當前選中的詳細資訊項目
