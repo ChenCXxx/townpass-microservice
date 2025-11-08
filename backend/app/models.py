@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String
+from sqlalchemy import Column, Integer, String, Date
 from .database import Base
 
 class User(Base):
@@ -17,7 +17,8 @@ class TestRecord(Base):
 class ConstructionNotice(Base):
     __tablename__ = "construction_notices"
     id = Column(Integer, primary_key=True, index=True)
-    date_range = Column(String(200), nullable=True)  # 日期範圍
+    start_date = Column(Date, nullable=True)  # 起始日期
+    end_date = Column(Date, nullable=True)  # 結束日期
     name = Column(String(500), nullable=False)  # 工程名稱
     type = Column(String(200), nullable=True)  # 工程類型
     unit = Column(String(200), nullable=True)  # 執行單位

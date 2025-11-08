@@ -3,12 +3,66 @@ import re
 from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session
 from typing import List, Dict, Any
+from datetime import date
 from ..models import ConstructionNotice
 import logging
 
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://dig.taipei/Tpdig/PWorkData.aspx"
+
+
+def parse_roc_date_range(date_range_str: str) -> tuple[date | None, date | None]:
+    """
+    解析民國年日期範圍字串，轉換為西元年日期
+    
+    Args:
+        date_range_str: 日期範圍字串，格式如 "114/12/01-114/12/31"
+    
+    Returns:
+        (start_date, end_date) 元組，如果解析失敗則返回 (None, None)
+    """
+    if not date_range_str or not date_range_str.strip():
+        return None, None
+    
+    try:
+        # 分割起始和結束日期
+        if '-' in date_range_str:
+            start_str, end_str = date_range_str.split('-', 1)
+            start_str = start_str.strip()
+            end_str = end_str.strip()
+        else:
+            # 如果沒有分隔符，假設是單一日期
+            start_str = date_range_str.strip()
+            end_str = start_str
+        
+        def roc_to_gregorian(roc_date_str: str) -> date | None:
+            """將民國年日期轉換為西元年日期"""
+            # 格式: "114/12/01" -> (114, 12, 01)
+            parts = roc_date_str.split('/')
+            if len(parts) != 3:
+                return None
+            
+            try:
+                roc_year = int(parts[0])
+                month = int(parts[1])
+                day = int(parts[2])
+                
+                # 民國年轉西元年: 114 + 1911 = 2025
+                gregorian_year = roc_year + 1911
+                
+                return date(gregorian_year, month, day)
+            except (ValueError, IndexError):
+                return None
+        
+        start_date = roc_to_gregorian(start_str)
+        end_date = roc_to_gregorian(end_str)
+        
+        return start_date, end_date
+        
+    except Exception as e:
+        logger.warning(f"Failed to parse date range '{date_range_str}': {e}")
+        return None, None
 
 
 def scrape_construction_notices(session: Session, max_pages: int = None) -> List[Dict[str, Any]]:
@@ -75,10 +129,13 @@ def scrape_construction_notices(session: Session, max_pages: int = None) -> List
                 tds = tr.select("td")
                 if len(tds) >= 4:
                     # 解析欄位
-                    date_range = tds[0].text.strip()  # 日期範圍
+                    date_range_str = tds[0].text.strip()  # 日期範圍字串
                     notice_type = tds[1].text.strip()  # 類型
                     unit = tds[2].text.strip()  # 單位
                     name = tds[3].text.strip()  # 名稱/道路
+                    
+                    # 解析日期範圍
+                    start_date, end_date = parse_roc_date_range(date_range_str)
                     
                     # 提取 URL
                     url = None
@@ -97,7 +154,8 @@ def scrape_construction_notices(session: Session, max_pages: int = None) -> List
                             road = match.group(1)
                     
                     notice_data = {
-                        'date_range': date_range if date_range else None,
+                        'start_date': start_date,
+                        'end_date': end_date,
                         'name': name,
                         'type': notice_type if notice_type else None,
                         'unit': unit if unit else None,
@@ -147,7 +205,8 @@ def save_construction_notices(session: Session, notices: List[Dict[str, Any]], c
             
             if not existing:
                 notice = ConstructionNotice(
-                    date_range=notice_data.get('date_range'),
+                    start_date=notice_data.get('start_date'),
+                    end_date=notice_data.get('end_date'),
                     name=notice_data['name'],
                     type=notice_data.get('type'),
                     unit=notice_data.get('unit'),

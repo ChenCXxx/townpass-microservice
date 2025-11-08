@@ -1,4 +1,5 @@
 from pydantic import BaseModel
+from datetime import date
 
 class UserCreate(BaseModel):
     name: str
@@ -23,7 +24,8 @@ class TestOut(BaseModel):
 
 class ConstructionNoticeOut(BaseModel):
     id: int
-    date_range: str | None = None
+    start_date: date | None = None
+    end_date: date | None = None
     name: str
     type: str | None = None
     unit: str | None = None
