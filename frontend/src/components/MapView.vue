@@ -39,6 +39,7 @@ const TPE_BBOX = '121.457,24.955,121.654,25.201'
 const datasets = ref([
   { id: 'accessibility', name: '無障礙據點', url: '/mapData/accessibility_new_tpe.geojson', color: '#10b981', outline: '#064e3b', visible: true },
   { id: 'attraction',    name: '景點',       url: '/mapData/attraction_tpe.geojson',     color: '#f59e0b', outline: '#92400e', visible: true },
+  { id: 'construction',    name: '施工地點',       url: '/mapData/construction.geojson',     color: '#ef4444', outline: '#7f1d1d', visible: true },
 ])
 
 // 快取：每個資料集 => { sourceId, layerIds, geo, bounds }
