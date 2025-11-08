@@ -18,7 +18,7 @@ let flutterMsgHandler = null
 const searchText = ref('')
 // 行政區篩選已移除，改用資料集顯示切換
 const selectedDistrict = ref('')   // 保留但不再顯示 UI（若未來需要可再啟用）
-const datasetFilter = ref('all')   // 'all' | 'attraction' | 'construction'
+const datasetFilter = ref('all')   // 'all' | 'attraction' | 'construction' | 'narrow_street'
 const showNearby = ref(false)
 const nearbyList = ref([])
 const lastSearchLonLat = ref(null)  // { lon, lat }：最近一次「搜尋中心」
@@ -39,7 +39,7 @@ const API_BASE = import.meta.env.VITE_API_BASE || ''
 const datasets = ref([
   { id: 'attraction', name: '景點', url: '/mapData/attraction_tpe.geojson', color: '#f59e0b', outline: '#92400e', visible: true, includeNearby: true },
   { id: 'construction', name: '施工地點', url: `${API_BASE}/api/construction/geojson`, color: '#ef4444', outline: '#7f1d1d', visible: true, includeNearby: true },
-  { id: 'alley', name: '巷弄線圖', url: '/mapData/matched_alley_lines.geojson', color: '#64748b', outline: '#475569', visible: true, includeNearby: false },
+  { id: 'narrow_street', name: '巷弄線圖', url: '/mapData/fire_narrow_street.geojson', color: '#64748b', outline: '#475569', visible: true, includeNearby: false },
 ])
 
 // 快取：每個資料集 => { sourceId, layerIds, geo, bounds }
@@ -139,11 +139,24 @@ async function ensureDatasetLoaded(ds) {
     attachPopupInteraction(lid, ds.id)
   } else if (geomType.includes('Line')) {
     const lid = `${ds.id}-lines`
+    const paint = ds.id === 'narrow_street'
+      ? {
+          'line-color': [
+            'match',
+            ['get', 'category'],
+            '紅區', '#ef4444',
+            '黃區', '#f59e0b',
+            ds.color
+          ],
+          'line-width': 3,
+          'line-opacity': 0.9
+        }
+      : { 'line-color': ds.color, 'line-width': 2 }
     map.addLayer({
       id: lid,
       type: 'line',
       source: sourceId,
-      paint: { 'line-color': ds.color, 'line-width': 2 },
+      paint,
       layout: { visibility: ds.visible ? 'visible' : 'none' }
     })
     layerIds.push(lid)
@@ -812,7 +825,7 @@ onBeforeUnmount(() => {
                       <option value="all">全部</option>
                       <option value="attraction">景點</option>
                       <option value="construction">施工地點</option>
-                      <option value="alley">巷弄線圖</option>
+                      <option value="narrow_street">巷弄線圖</option>
                     </select>
                   </div>
                 </div>

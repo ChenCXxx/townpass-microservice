@@ -19,6 +19,11 @@
     "用途": "PURP",
     "行政區": "行政區",
     "地址": "地址"
+  },
+  "narrow_street": {
+    "巷弄名稱": "alley_name",
+    "巷弄寬度": "width",
+    "分類": "category"
   }
 }
 
