@@ -113,14 +113,11 @@ async function ensureDatasetLoaded(ds) {
     attachPopupInteraction(lid)
   } else if (geomType.includes('Line')) {
     const lid = `${ds.id}-lines`
-    const paint = ds.id === 'alley'
-      ? { 'line-color': ds.color, 'line-width': 3, 'line-opacity': 0.9 }
-      : { 'line-color': ds.color, 'line-width': 2 }
     map.addLayer({
       id: lid,
       type: 'line',
       source: sourceId,
-      paint,
+      paint: { 'line-color': ds.color, 'line-width': 2 },
       layout: { visibility: ds.visible ? 'visible' : 'none' }
     })
     layerIds.push(lid)

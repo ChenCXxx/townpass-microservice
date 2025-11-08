@@ -9,9 +9,7 @@ const currentTab = ref('recommend')
 const savedPlaces = ref([])
 const expandedFavoriteIds = ref([])
 const notificationEnabled = ref({}) // { [placeId]: boolean }
-// 每個收藏最近一次發送通知的時間戳，避免過度頻繁（若希望每 5 分鐘都重發可刪除此 map 判斷）
-const lastNotifyAt = ref({}) // { [placeId]: number }
-let notificationPollTimer = null
+// 前端輪詢已移除，改用 Flutter 背景任務
 const selectedCategory = ref({}) // { [placeId]: 'attraction' | 'construction' }
 const FAVORITES_STORAGE_KEY = 'mapFavorites'
 const NOTIFICATION_STORAGE_KEY = 'placeNotifications'
@@ -22,17 +20,12 @@ onMounted(async () => {
   if (typeof window !== 'undefined') {
     window.addEventListener('map-favorites-updated', loadSavedPlaces)
   }
-  // 啟動每 5 分鐘輪詢
-  startNotificationPolling()
+  // 前端輪詢已移除，通知改由 Android 背景任務處理
 })
 
 onBeforeUnmount(() => {
   if (typeof window !== 'undefined') {
     window.removeEventListener('map-favorites-updated', loadSavedPlaces)
-  }
-  if (notificationPollTimer) {
-    clearInterval(notificationPollTimer)
-    notificationPollTimer = null
   }
 })
 
@@ -125,25 +118,39 @@ function removeFavorite(id) {
 }
 
 function toggleNotification(placeId) {
-  notificationEnabled.value[placeId] = !notificationEnabled.value[placeId]
+  const wasEnabled = notificationEnabled.value[placeId] || false
+  notificationEnabled.value[placeId] = !wasEnabled
   saveNotificationSettings()
-  const enabled = notificationEnabled.value[placeId]
-  if (enabled) {
-    // 立即檢查一次並可能發送通知
-    checkAndNotifyPlace(placeId, { immediate: true })
-  }
-}
-
-function startNotificationPolling() {
-  if (notificationPollTimer) return
-  // 每 5 分鐘（300000 ms）輪詢一次
-  notificationPollTimer = setInterval(() => {
-    for (const place of savedPlaces.value) {
-      if (notificationEnabled.value[place.id]) {
-        checkAndNotifyPlace(place.id, { immediate: false })
+  
+  const nowEnabled = notificationEnabled.value[placeId]
+  
+  // 檢查是否有任何收藏啟用通知
+  const anyEnabled = Object.values(notificationEnabled.value).some(v => v === true)
+  
+  try {
+    if (anyEnabled) {
+      // 有至少一個收藏啟用通知 -> 啟動背景任務
+      const watchPayload = { name: 'watch', data: null }
+      if (typeof window !== 'undefined' && window.flutterObject?.postMessage) {
+        window.flutterObject.postMessage(JSON.stringify(watchPayload))
+        console.log('[Home] Sent watch message to start background task')
+      }
+    } else {
+      // 所有收藏都關閉通知 -> 停止背景任務
+      const unwatchPayload = { name: 'unwatch', data: null }
+      if (typeof window !== 'undefined' && window.flutterObject?.postMessage) {
+        window.flutterObject.postMessage(JSON.stringify(unwatchPayload))
+        console.log('[Home] Sent unwatch message to stop background task')
       }
     }
-  }, 300000)
+  } catch (e) {
+    console.warn('Failed to send watch/unwatch message', e)
+  }
+  
+  // 如果剛開啟，立即檢查一次（前端即時通知）
+  if (nowEnabled) {
+    checkAndNotifyPlace(placeId, { immediate: true })
+  }
 }
 
 function checkAndNotifyPlace(placeId, { immediate = false } = {}) {
@@ -153,22 +160,17 @@ function checkAndNotifyPlace(placeId, { immediate = false } = {}) {
   const constructionCount = recs.filter(r => r?.dsid === 'construction' || (r?.props && (r.props.AP_NAME || r.props.PURP))).length
   if (constructionCount <= 0) return
 
-  const now = Date.now()
-  const lastTs = lastNotifyAt.value[placeId] || 0
-  // 若 immediate 則忽略時間間隔；非 immediate 時需至少間隔 4 分鐘 (240000ms) 避免過度噪音
-  if (!immediate && (now - lastTs) < 240000) return
-
+  // 立即通知（前端層，不需時間間隔判斷）
   try {
     const payload = {
       name: 'notify',
       data: {
         title: `${place.name || '收藏地點'} 附近施工資訊`,
-        content: `此收藏 1 公里內仍有 ${constructionCount} 個施工地點`,
+        content: `此收藏 1 公里內有 ${constructionCount} 個施工地點`,
       },
     }
     if (typeof window !== 'undefined' && window.flutterObject?.postMessage) {
       window.flutterObject.postMessage(JSON.stringify(payload))
-      lastNotifyAt.value[placeId] = now
     }
   } catch (e) {
     console.warn('Failed to send notify message', e)
