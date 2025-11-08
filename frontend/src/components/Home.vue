@@ -9,8 +9,8 @@ const currentTab = ref('recommend')
 const savedPlaces = ref([])
 const expandedFavoriteIds = ref([])
 const notificationEnabled = ref({}) // { [placeId]: boolean }
-// 前端輪詢已移除，改用 Flutter 背景任務
-const selectedCategory = ref({}) // { [placeId]: 'attraction' | 'construction' }
+// 類別選擇：'nearby' | 'upcoming'
+const selectedCategory = ref({}) // { [placeId]: 'nearby' | 'upcoming' }
 const FAVORITES_STORAGE_KEY = 'mapFavorites'
 const NOTIFICATION_STORAGE_KEY = 'placeNotifications'
 
@@ -105,9 +105,9 @@ function toggleFavoriteDetails(id) {
     expandedFavoriteIds.value = expandedFavoriteIds.value.filter((item) => item !== id)
   } else {
     expandedFavoriteIds.value = [...expandedFavoriteIds.value, id]
-    // 預設選擇施工（因為已移除景點選項）
+    // 預設選擇『附近施工資訊』
     if (!selectedCategory.value[id]) {
-      selectedCategory.value[id] = 'construction'
+      selectedCategory.value[id] = 'nearby'
     }
   }
 }
@@ -186,10 +186,30 @@ function selectCategoryForPlace(placeId, category) {
   selectedCategory.value[placeId] = category
 }
 
+function parsePossibleDate(raw) {
+  if (!raw || typeof raw !== 'string') return null
+  const cleaned = raw.replace(/\//g, '-').trim()
+  const d = new Date(cleaned)
+  return isNaN(d.getTime()) ? null : d
+}
+
 function getFilteredRecommendations(place) {
   const recs = Array.isArray(place.recommendations) ? place.recommendations : []
-  // 只顯示施工資訊
-  return recs.filter(r => r?.dsid === 'construction' || (r?.props && (r.props.AP_NAME || r.props.PURP)))
+  const constructions = recs.filter(r => r?.dsid === 'construction' || (r?.props && (r.props.AP_NAME || r.props.PURP)))
+  const category = selectedCategory.value[place.id]
+  if (category === 'upcoming') {
+    const now = new Date()
+    const future = constructions.filter(r => {
+      const props = r?.props || {}
+      const dateCandidate = parsePossibleDate(props.SDATE || props.START_DATE || props.startDate || props.BEG_DATE)
+      if (!dateCandidate) return false
+      return dateCandidate.getTime() > now.getTime()
+    })
+    // 若沒有任何可判斷為未來的施工，回傳空陣列表示『目前沒有未來公告』
+    return future
+  }
+  // nearby
+  return constructions
 }
 
 function formatFavoriteDate(value) {
@@ -320,12 +340,45 @@ async function triggerConstructionUpdate() {
             v-if="isFavoriteExpanded(place.id)"
             class="border-t border-slate-200 bg-slate-50 px-4 py-4"
           >
-            <!-- 標題 -->
-            <div class="mb-3">
-              <h3 class="text-sm font-semibold text-gray-800">附近施工公告</h3>
+            <!-- 類別選擇圓形按鈕（雙藍色樣式） -->
+            <div class="mb-4 flex items-center gap-3">
+              <span class="text-xs font-medium text-gray-600">顯示類型：</span>
+              <div class="flex gap-2">
+                <button
+                  type="button"
+                  @click="selectCategoryForPlace(place.id, 'nearby')"
+                  :class="[
+                    'flex h-10 items-center justify-center rounded-full border-2 px-4 text-xs font-medium transition-all',
+                    selectedCategory[place.id] === 'nearby'
+                      ? 'border-blue-900 bg-blue-900 text-white shadow-md'
+                      : 'border-gray-300 bg-white text-gray-600 hover:border-blue-400'
+                  ]"
+                >
+                  附近施工資訊
+                </button>
+                <button
+                  type="button"
+                  @click="selectCategoryForPlace(place.id, 'upcoming')"
+                  :class="[
+                    'flex h-10 items-center justify-center rounded-full border-2 px-4 text-xs font-medium transition-all',
+                    selectedCategory[place.id] === 'upcoming'
+                      ? 'border-blue-900 bg-blue-900 text-white shadow-md'
+                      : 'border-gray-300 bg-white text-gray-600 hover:border-blue-400'
+                  ]"
+                >
+                  未來施工公告
+                </button>
+              </div>
             </div>
 
-            <!-- 施工公告列表 -->
+            <!-- 清單標題 -->
+            <div class="mb-2">
+              <h3 class="text-sm font-semibold text-gray-800">
+                {{ selectedCategory[place.id] === 'upcoming' ? '未來施工公告' : '附近施工資訊' }}
+              </h3>
+            </div>
+
+            <!-- 施工資訊列表 -->
             <div class="space-y-2">
               <template v-if="getFilteredRecommendations(place).length">
                 <div
@@ -337,13 +390,13 @@ async function triggerConstructionUpdate() {
                     <div class="font-medium">{{ rec.props?.AP_NAME || rec.name }}</div>
                     <div class="text-xs text-gray-600 mt-0.5">{{ rec.props?.PURP || rec.addr }}</div>
                   </div>
-                  <div v-if="typeof rec.dist === 'number'" class="text-xs text-gray-400 mt-1">
+                  <div v-if="typeof rec.dist === 'number' && selectedCategory[place.id] === 'nearby'" class="text-xs text-gray-400 mt-1">
                     距離約 {{ formatDistance(rec.dist) }}
                   </div>
                 </div>
               </template>
               <p v-else class="py-3 text-center text-xs text-gray-500">
-                1 公里內沒有施工資訊
+                {{ selectedCategory[place.id] === 'upcoming' ? '目前沒有未來施工公告' : '1 公里內沒有施工資訊' }}
               </p>
             </div>
           </div>
