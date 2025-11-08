@@ -8,7 +8,7 @@ const router = useRouter()
 const currentTab = ref('watch')
 const trackingEnabled = ref(false)
 const statusText = ref('尚未啟動')
-const statusDetail = ref('開啟後會在背景持續運作\n並於接近施工點時語音提醒')
+const statusDetail = ref('開啟後會在背景持續運作\n並於接近施工點時語音提醒。')
 const currentLocation = ref(null) // { lon, lat }
 const lastUpdate = ref(null)
 const nearbySites = ref([])
@@ -276,11 +276,6 @@ function formatDistance(meters) {
   }
   return `${Math.round(meters)} 公尺`
 }
-
-function truncateText(text, max = 15) {
-  if (typeof text !== 'string') return ''
-  return text.length > max ? `${text.slice(0, max)}...` : text
-}
 </script>
 
 <template>
@@ -294,7 +289,7 @@ function truncateText(text, max = 15) {
             <div>
               <p class="text-sm text-slate-500">路上偵測狀態</p>
               <p class="text-xl font-semibold text-slate-900">{{ statusText }}</p>
-              <p class="text-xs text-slate-500">{{ statusDetail }}</p>
+              <p class="whitespace-pre-line text-xs text-slate-500">{{ statusDetail }}</p>
             </div>
             <button
               class="w-full rounded-full px-4 py-2 text-sm font-semibold text-white sm:w-auto"
@@ -357,7 +352,7 @@ function truncateText(text, max = 15) {
               class="py-3"
             >
               <div class="flex items-center justify-between gap-2 text-sm">
-                <span class="min-w-0 flex-1 font-semibold text-slate-900">{{ truncateText(site.name, 15) }}</span>
+                <span class="min-w-0 flex-1 truncate font-semibold text-slate-900">{{ site.name }}</span>
                 <span class="shrink-0 text-rose-500 font-semibold">{{ formatDistance(site.distance) }}</span>
               </div>
               <p v-if="site.company" class="mt-1 text-xs text-slate-500 line-clamp-2">{{ site.company }}</p>
