@@ -21,6 +21,8 @@ const selectedDistrict = ref('')   // 保留但不再顯示 UI（若未來需要
 const datasetFilter = ref('all')   // 'all' | 'attraction' | 'construction' | 'narrow_street'
 const showNearby = ref(false)
 const nearbyList = ref([])
+const selectedNearbyItem = ref(null) // 當前選中的詳細資訊項目
+const showDetailView = ref(false) // 是否顯示詳細資訊模式（單行顯示）
 const lastSearchLonLat = ref(null)  // { lon, lat }：最近一次「搜尋中心」
 const userLonLat = ref(null)        // { lon, lat }：最新「GPS 定位」
 const originMode = ref('gps')       // 'gps' | 'search'
@@ -103,17 +105,37 @@ function attachPopupInteraction(layerId, datasetId) {
 function showNearbyItemPopup(item) {
   if (!map || !item) return
   
+  // 設置詳細資訊模式
+  selectedNearbyItem.value = item
+  showDetailView.value = true
+  
   // 先關閉現有的 popup
   const existingPopups = document.querySelectorAll('.mapboxgl-popup')
   existingPopups.forEach(p => p.remove())
   
-  // 飛到該位置
-  map.flyTo({ center: [item.lon, item.lat], zoom: 16 })
+  // 飛到該位置（使用 padding 讓目標點不在正中心）
+  flyToLngLat(item.lon, item.lat, 16, { bottom: 250 })
   
   // 創建並顯示 popup
   const props = item.props || {}
   const datasetId = item.dsid || 'attraction' // 從 item 中取得資料集 ID
   createMapPopup(props, datasetId, [item.lon, item.lat])
+}
+
+// 返回搜尋結果清單
+function backToNearbyList() {
+  showDetailView.value = false
+  selectedNearbyItem.value = null
+  // 關閉 popup
+  const existingPopups = document.querySelectorAll('.mapboxgl-popup')
+  existingPopups.forEach(p => p.remove())
+}
+
+// 關閉附近清單
+function closeNearbyList() {
+  showNearby.value = false
+  showDetailView.value = false
+  selectedNearbyItem.value = null
 }
 
 async function ensureDatasetLoaded(ds) {
@@ -523,8 +545,17 @@ function searchInAttractionDataset(kw) {
   return null
 }
 
-function flyToLngLat(lon, lat, zoom = 15) {
-  map?.flyTo({ center: [lon, lat], zoom })
+function flyToLngLat(lon, lat, zoom = 15, padding = {}) {
+  // 使用 padding 讓目標點不在正中心，稍微偏上一點，為底部列表留出空間
+  // padding 參數只需要傳入想要改變的部分，會與默認值合併
+  const defaultPadding = { top: 0, right: 0, bottom: 0, left: 0 }
+  const finalPadding = { ...defaultPadding, ...padding }
+  
+  map?.flyTo({ 
+    center: [lon, lat], 
+    zoom,
+    padding: finalPadding
+  })
 }
 
 function isInsideTPEBBox(lon, lat) {
@@ -840,10 +871,31 @@ onBeforeUnmount(() => {
 
           <!-- 附近列表 -->
           <div class="pointer-events-none absolute inset-x-0 bottom-0 px-2 pb-2">
-            <div v-if="showNearby" class="pointer-events-auto w-full rounded-2xl border border-gray-200 bg-white/95 shadow-sm">
+            <!-- 詳細資訊模式：只顯示一行該筆資料 -->
+            <div v-if="showNearby && showDetailView && selectedNearbyItem" class="pointer-events-auto w-full rounded-2xl border border-gray-200 bg-white/95 shadow-sm">
+              <div class="flex items-center justify-between px-4 py-3">
+                <div class="min-w-0 flex-1">
+                  <div class="font-medium truncate">{{ selectedNearbyItem.name }}</div>
+                  <div class="truncate text-xs text-gray-600">{{ selectedNearbyItem.addr }}</div>
+                </div>
+                <div class="flex items-center gap-3 ml-3">
+                  <div class="whitespace-nowrap text-sm font-semibold">{{ selectedNearbyItem.dist }} 公尺</div>
+                </div>
+              </div>
+              <div class="px-4 pb-3">
+                <button
+                  class="w-full rounded border px-3 py-2 text-sm hover:bg-gray-100 transition-colors text-gray-700"
+                  @click="backToNearbyList"
+                >
+                  ← 返回搜尋結果
+                </button>
+              </div>
+            </div>
+            <!-- 正常清單模式 -->
+            <div v-else-if="showNearby" class="pointer-events-auto w-full rounded-2xl border border-gray-200 bg-white/95 shadow-sm">
               <button
                 class="flex w-full items-center justify-between rounded-t-2xl px-4 py-3 text-left font-medium"
-                @click="showNearby = false"
+                @click="closeNearbyList"
               >
                 <span>距中心點 1 公里內的據點（{{ nearbyList.length }}）</span>
                 <span class="text-sm text-gray-500">收合</span>
