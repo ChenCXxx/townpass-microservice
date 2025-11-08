@@ -18,9 +18,12 @@ let latestRoadSuggestionToken = 0
 let skipNextRoadSuggestionFetch = false
 
 // ====== UI 狀態 ======
-const searchMode = ref('place')      // 'place' | 'road'
+const searchMode = ref('place')      // 'place' | 'road' | 'route'
 const searchText = ref('')
 const roadSearchText = ref('')
+const routeStart = ref('')           // 起點輸入
+const routeEnd = ref('')             // 終點輸入
+const currentRouteGeoJSON = ref(null) // 當前路線的 GeoJSON 資料
 // 行政區篩選已移除，改用資料集顯示切換
 const selectedDistrict = ref('')   // 保留但不再顯示 UI（若未來需要可再啟用）
 const enabledDatasets = ref(['construction', 'narrow_street']) // 已啟用的資料集 ID 陣列（景點僅供搜尋用）
@@ -56,6 +59,10 @@ const datasets = ref([
 
 const ROAD_SEARCH_SOURCE_ID = 'road-search'
 const ROAD_SEARCH_LAYER_ID = 'road-search-lines'
+const ROUTE_SOURCE_ID = 'route-navigation'
+const ROUTE_LAYER_ID = 'route-line'
+const ROUTE_MARKERS_SOURCE_ID = 'route-markers'
+const ROUTE_MARKERS_LAYER_ID = 'route-markers-symbols'
 
 // 快取：每個資料集 => { sourceId, layerIds, geo, bounds }
 const datasetCache = new Map()
@@ -304,8 +311,16 @@ watch(searchMode, (mode) => {
     roadSuggestions.value = []
     showRoadSuggestions.value = false
     clearRoadSearchData()
-  } else {
+    clearRouteFromMap()
+  } else if (mode === 'road') {
     searchText.value = ''
+    clearRouteFromMap()
+  } else if (mode === 'route') {
+    searchText.value = ''
+    roadSearchText.value = ''
+    roadSuggestions.value = []
+    showRoadSuggestions.value = false
+    clearRoadSearchData()
   }
 })
 
@@ -456,6 +471,212 @@ function clearSearchText() {
   } else {
     searchText.value = ''
   }
+}
+
+function clearRouteInputs() {
+  routeStart.value = ''
+  routeEnd.value = ''
+  clearRouteFromMap()
+}
+
+function clearRouteFromMap() {
+  // 清除路線圖層
+  if (map && map.getSource(ROUTE_SOURCE_ID)) {
+    map.getSource(ROUTE_SOURCE_ID)?.setData({
+      type: 'FeatureCollection',
+      features: []
+    })
+  }
+  if (map && map.getSource(ROUTE_MARKERS_SOURCE_ID)) {
+    map.getSource(ROUTE_MARKERS_SOURCE_ID)?.setData({
+      type: 'FeatureCollection',
+      features: []
+    })
+  }
+  currentRouteGeoJSON.value = null
+}
+
+async function performRouteSearch() {
+  const start = routeStart.value.trim()
+  const end = routeEnd.value.trim()
+  
+  if (!start || !end) {
+    alert('請輸入起點和終點')
+    return
+  }
+
+  try {
+    console.log('開始路線規劃:', { start, end })
+    
+    // 1. 先將起點和終點轉換成座標
+    const startCoords = await geocodePlaceInTaipei(start)
+    console.log('起點座標:', startCoords)
+    
+    const endCoords = await geocodePlaceInTaipei(end)
+    console.log('終點座標:', endCoords)
+
+    if (!startCoords) {
+      alert(`找不到起點：${start}\n請輸入更精確的地址或地點名稱`)
+      return
+    }
+    if (!endCoords) {
+      alert(`找不到終點：${end}\n請輸入更精確的地址或地點名稱`)
+      return
+    }
+
+    // 2. 使用 Mapbox Directions API 取得路線
+    const accessToken = import.meta.env.VITE_MAPBOXTOKEN || mapboxgl.accessToken
+    if (!accessToken) {
+      console.error('Mapbox token not found')
+      alert('地圖服務設定錯誤，請聯絡系統管理員')
+      return
+    }
+
+    const directionsUrl = `https://api.mapbox.com/directions/v5/mapbox/walking/${startCoords.lon},${startCoords.lat};${endCoords.lon},${endCoords.lat}`
+    const params = new URLSearchParams({
+      geometries: 'geojson',
+      access_token: accessToken,
+      language: 'zh-Hant',
+    })
+
+    console.log('呼叫 Directions API:', `${directionsUrl}?${params}`)
+    
+    const response = await fetch(`${directionsUrl}?${params}`)
+    const data = await response.json()
+    
+    console.log('API 回應:', data)
+
+    if (!response.ok) {
+      console.error('API 錯誤:', response.status, data)
+      alert(`路線規劃服務錯誤 (${response.status})\n${data.message || '請稍後再試'}`)
+      return
+    }
+
+    if (!data.routes || data.routes.length === 0) {
+      alert('找不到可行路線，請嘗試其他地點')
+      return
+    }
+
+    const route = data.routes[0]
+    console.log('找到路線:', {
+      distance: route.distance,
+      duration: route.duration,
+      coordinates: route.geometry.coordinates.length
+    })
+    
+    const routeGeoJSON = {
+      type: 'Feature',
+      geometry: route.geometry,
+      properties: {
+        distance: route.distance,
+        duration: route.duration
+      }
+    }
+
+    currentRouteGeoJSON.value = routeGeoJSON
+
+    // 3. 在地圖上顯示路線
+    displayRouteOnMap(routeGeoJSON, startCoords, endCoords)
+
+    // 4. 調整視角以顯示完整路線
+    const coordinates = route.geometry.coordinates
+    const bounds = coordinates.reduce((bounds, coord) => {
+      return bounds.extend(coord)
+    }, new mapboxgl.LngLatBounds(coordinates[0], coordinates[0]))
+
+    map.fitBounds(bounds, {
+      padding: 80,
+      maxZoom: 16
+    })
+
+  } catch (error) {
+    console.error('路線規劃錯誤:', error)
+    alert(`路線規劃失敗：${error.message}\n請檢查網路連線或稍後再試`)
+  }
+}
+
+function displayRouteOnMap(routeGeoJSON, startCoords, endCoords) {
+  // 確保路線圖層存在
+  if (!map.getSource(ROUTE_SOURCE_ID)) {
+    map.addSource(ROUTE_SOURCE_ID, {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] }
+    })
+  }
+
+  if (!map.getLayer(ROUTE_LAYER_ID)) {
+    map.addLayer({
+      id: ROUTE_LAYER_ID,
+      type: 'line',
+      source: ROUTE_SOURCE_ID,
+      layout: {
+        'line-join': 'round',
+        'line-cap': 'round'
+      },
+      paint: {
+        'line-color': '#3b82f6',
+        'line-width': 5,
+        'line-opacity': 0.8
+      }
+    })
+  }
+
+  // 設定路線資料
+  map.getSource(ROUTE_SOURCE_ID).setData({
+    type: 'FeatureCollection',
+    features: [routeGeoJSON]
+  })
+
+  // 顯示起點和終點標記
+  if (!map.getSource(ROUTE_MARKERS_SOURCE_ID)) {
+    map.addSource(ROUTE_MARKERS_SOURCE_ID, {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] }
+    })
+  }
+
+  if (!map.getLayer(ROUTE_MARKERS_LAYER_ID)) {
+    map.addLayer({
+      id: ROUTE_MARKERS_LAYER_ID,
+      type: 'circle',
+      source: ROUTE_MARKERS_SOURCE_ID,
+      paint: {
+        'circle-radius': 8,
+        'circle-color': [
+          'match',
+          ['get', 'type'],
+          'start', '#22c55e',
+          'end', '#ef4444',
+          '#94a3b8'
+        ],
+        'circle-stroke-width': 2,
+        'circle-stroke-color': '#ffffff'
+      }
+    })
+  }
+
+  // 設定起點和終點標記
+  map.getSource(ROUTE_MARKERS_SOURCE_ID).setData({
+    type: 'FeatureCollection',
+    features: [
+      {
+        type: 'Feature',
+        geometry: {
+          type: 'Point',
+          coordinates: [startCoords.lon, startCoords.lat]
+        },
+        properties: { type: 'start', name: '起點' }
+      },
+      {
+        type: 'Feature',
+        geometry: {
+          type: 'Point',
+          coordinates: [endCoords.lon, endCoords.lat]
+        },
+        properties: { type: 'end', name: '終點' }
+      }
+    ]
+  })
 }
 
 function centerOnUserLocation() {
@@ -977,6 +1198,11 @@ async function goSearch() {
     return
   }
 
+  if (searchMode.value === 'route') {
+    await performRouteSearch()
+    return
+  }
+
   // 行政區篩選已移除；改為資料集顯示選單（不需於搜尋時套用）
 
   const kw = (searchText.value || '').trim()
@@ -1148,6 +1374,7 @@ onBeforeUnmount(() => {
             >
               <option value="place">地點</option>
               <option value="road">道路</option>
+              <option value="route">起訖點</option>
             </select>
 
             <div class="relative flex-1">
@@ -1160,7 +1387,7 @@ onBeforeUnmount(() => {
                 class="w-full rounded-full border border-gray-300 bg-white pl-4 pr-20 py-2.5 text-sm shadow-sm focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
               />
               <input
-                v-else
+                v-else-if="searchMode === 'road'"
                 v-model="roadSearchText"
                 @keyup.enter="goSearch"
                 @focus="openRoadSuggestionDropdown"
@@ -1169,8 +1396,25 @@ onBeforeUnmount(() => {
                 placeholder="輸入道路名稱"
                 class="w-full rounded-full border border-gray-300 bg-white pl-4 pr-20 py-2.5 text-sm shadow-sm focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
               />
+              <!-- 起訖點模式：兩個輸入框 -->
+              <div v-else-if="searchMode === 'route'" class="flex flex-col gap-2">
+                <input
+                  v-model="routeStart"
+                  @keyup.enter="goSearch"
+                  type="text"
+                  placeholder="起點地址"
+                  class="w-full rounded-full border border-gray-300 bg-white pl-4 pr-20 py-2.5 text-sm shadow-sm focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
+                />
+                <input
+                  v-model="routeEnd"
+                  @keyup.enter="goSearch"
+                  type="text"
+                  placeholder="終點地址"
+                  class="w-full rounded-full border border-gray-300 bg-white pl-4 pr-20 py-2.5 text-sm shadow-sm focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-400"
+                />
+              </div>
 
-              <div class="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
+              <div v-if="searchMode !== 'route'" class="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
                 <button
                   v-if="(searchMode === 'road' ? roadSearchText : searchText)"
                   @click="clearSearchText"
@@ -1193,6 +1437,27 @@ onBeforeUnmount(() => {
                   <svg class="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
                   </svg>
+                </button>
+              </div>
+              
+              <!-- 起訖點模式的搜尋按鈕（獨立顯示） -->
+              <div v-else class="mt-2 flex justify-end gap-2">
+                <button
+                  v-if="routeStart || routeEnd"
+                  @click="clearRouteInputs"
+                  type="button"
+                  class="rounded-full border border-gray-300 bg-white px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
+                >
+                  清除
+                </button>
+                <button
+                  @click="goSearch"
+                  type="button"
+                  class="rounded-full bg-sky-500 px-6 py-2 text-sm text-white hover:bg-sky-600"
+                  :disabled="!routeStart || !routeEnd"
+                  :class="{ 'opacity-60 cursor-not-allowed': !routeStart || !routeEnd }"
+                >
+                  規劃路線
                 </button>
               </div>
 
