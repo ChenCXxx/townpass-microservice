@@ -100,3 +100,31 @@ def manual_update():
     except Exception as e:
         logger.error(f"Manual update failed: {e}", exc_info=True)
         return {"status": "error", "message": str(e)}
+
+
+# Construction Notices endpoints
+@router.get("/construction/notices", response_model=list[schemas.ConstructionNoticeOut])
+def list_construction_notices(
+    db: Session = Depends(get_db),
+    skip: int = 0,
+    limit: int = 100
+):
+    """獲取施工通知列表"""
+    notices = db.query(models.ConstructionNotice).offset(skip).limit(limit).all()
+    return notices
+
+
+@router.get("/construction/notices/update", response_model=Dict[str, Any])
+def update_construction_notices_endpoint(
+    db: Session = Depends(get_db),
+    max_pages: int = None,
+    clear_existing: bool = True
+):
+    """手動觸發更新施工通知資料（爬取並保存）"""
+    from ..services.notice_contruction import update_construction_notices
+    try:
+        result = update_construction_notices(db, max_pages=max_pages, clear_existing=clear_existing)
+        return result
+    except Exception as e:
+        logger.error(f"Update construction notices failed: {e}", exc_info=True)
+        return {"status": "error", "message": str(e)}

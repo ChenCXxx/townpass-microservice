@@ -3,12 +3,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 import logging
 import sys
-from .database import Base, engine
+from .database import Base, engine, SessionLocal
 from .routers.api import router
 from .config import settings
 from .services.construction_scraper import update_construction_geojson_file
+from .services.notice_contruction import update_construction_notices
 import os
 
 # Configure logging
@@ -36,6 +38,21 @@ def scheduled_update():
     else:
         logger.error("Scheduled update failed")
 
+def scheduled_notice_update():
+    """Scheduled task to update construction notices"""
+    logger.info("Running scheduled construction notices update...")
+    db = SessionLocal()
+    try:
+        result = update_construction_notices(db, max_pages=None, clear_existing=False)
+        if result.get("status") == "success":
+            logger.info(f"Construction notices update completed: scraped {result.get('scraped_count', 0)}, saved {result.get('saved_count', 0)}")
+        else:
+            logger.error(f"Construction notices update failed: {result.get('message', 'Unknown error')}")
+    except Exception as e:
+        logger.error(f"Construction notices update failed with exception: {e}", exc_info=True)
+    finally:
+        db.close()
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Lifespan context manager for startup and shutdown events"""
@@ -62,6 +79,22 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Initial update failed with exception: {e}", exc_info=True)
         logger.warning("Application will continue to start, but construction data may be unavailable")
+    
+    # Run initial construction notices update on startup
+    logger.info("Running initial construction notices update on startup...")
+    db = SessionLocal()
+    try:
+        result = update_construction_notices(db, max_pages=None, clear_existing=True)
+        if result.get("status") == "success":
+            logger.info(f"Initial construction notices update completed: scraped {result.get('scraped_count', 0)}, saved {result.get('saved_count', 0)}")
+        else:
+            logger.error(f"Initial construction notices update failed: {result.get('message', 'Unknown error')}")
+            logger.warning("Application will continue to start, but construction notices may be unavailable")
+    except Exception as e:
+        logger.error(f"Initial construction notices update failed with exception: {e}", exc_info=True)
+        logger.warning("Application will continue to start, but construction notices may be unavailable")
+    finally:
+        db.close()
     
     # Setup scheduled task
     # Parse cron schedule: "minute hour day month day_of_week"
@@ -92,6 +125,16 @@ async def lifespan(app: FastAPI):
             name="Update construction.geojson",
             replace_existing=True
         )
+    
+    # Setup construction notices scheduled task (every 10 minutes)
+    scheduler.add_job(
+        scheduled_notice_update,
+        trigger=IntervalTrigger(minutes=10),
+        id="construction_notices_update",
+        name="Update construction notices",
+        replace_existing=True
+    )
+    logger.info("Scheduled construction notices update: every 10 minutes")
     
     scheduler.start()
     logger.info("=" * 60)
