@@ -271,7 +271,7 @@ async function triggerConstructionUpdate() {
                   <div v-else-if="place.addr" class="mt-0.5 text-xs text-gray-500">{{ place.addr }}</div>
                 </div>
                 <span
-                  class="mt-1 inline-block text-sm text-blue-500 transition-transform flex-shrink-0"
+                  class="mt-1 inline-block text-sm text-blue-500 transition-transform shrink-0"
                   :class="isFavoriteExpanded(place.id) ? 'rotate-180' : 'rotate-0'"
                 >▼</span>
               </div>
@@ -282,7 +282,7 @@ async function triggerConstructionUpdate() {
               type="button"
               @click.stop="toggleNotification(place.id)"
               :class="[
-                'flex h-9 w-9 items-center justify-center rounded-full border transition-colors flex-shrink-0',
+                'flex h-9 w-9 items-center justify-center rounded-full border transition-colors shrink-0',
                 notificationEnabled[place.id]
                   ? 'border-amber-400 bg-amber-50 text-amber-600'
                   : 'border-gray-300 bg-gray-50 text-gray-400 hover:bg-gray-100'

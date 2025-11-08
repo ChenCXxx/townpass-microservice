@@ -665,7 +665,7 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="bg-white min-h-screen">
-    <section class="mx-auto flex h-[100dvh] w-full max-w-[720px] flex-col px-3 pb-5 pt-2 overflow-hidden">
+    <section class="mx-auto flex h-dvh w-full max-w-[720px] flex-col px-3 pb-5 pt-2 overflow-hidden">
       <TopTabs active="map" @select="handleTabSelect" />
 
       <div class="mt-3 flex flex-1 flex-col overflow-hidden">
