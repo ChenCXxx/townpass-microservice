@@ -276,7 +276,7 @@ async function ensureDatasetLoaded(ds) {
           layout: {
             visibility: ds.visible ? 'visible' : 'none',
             'icon-image': 'construction-icon-yellow',
-            'icon-size': 0.24,
+            'icon-size': 0.5,
             'icon-allow-overlap': true,
             'icon-ignore-placement': true
           }
@@ -1533,7 +1533,7 @@ function ensureNearbyCircleLayer() {
           source: 'nearby-points-highlight',
           layout: {
             'icon-image': 'construction-icon-red',
-            'icon-size': 0.24,
+            'icon-size': 0.5,
             'icon-allow-overlap': true,
             'icon-ignore-placement': true
           }
@@ -2425,7 +2425,7 @@ onBeforeUnmount(() => {
           <div class="flex flex-1 items-center gap-2">
             <select
               v-model="searchMode"
-              class="tp-focus-outline h-11 w-28 rounded-full border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 shadow-sm"
+              class="tp-focus-outline h-11 w-20 rounded-full border border-gray-300 bg-white px-3 text-sm font-medium text-gray-700 shadow-sm"
             >
               <option value="place">地點</option>
               <option value="road">道路</option>
