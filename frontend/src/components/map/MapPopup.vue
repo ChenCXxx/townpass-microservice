@@ -74,8 +74,9 @@ const displayFields = computed(() => {
   </div>
 </template>
 
-<style>
-.inset-card-popup .mapboxgl-popup-content{
+<style scoped>
+/* 使用 :global() 來定義 Mapbox popup 的外部樣式，但限制在組件範圍內 */
+:global(.inset-card-popup .mapboxgl-popup-content) {
   padding: 0;
   background: transparent;
   border: none;
@@ -83,18 +84,20 @@ const displayFields = computed(() => {
   box-shadow: none;
 }
 
-.inset-card-popup .mapboxgl-popup-tip{
+:global(.inset-card-popup .mapboxgl-popup-tip) {
   display: none;
 }
 
-.inset-card-popup .mapboxgl-popup-close-button{
+:global(.inset-card-popup .mapboxgl-popup-close-button) {
   position: absolute;
   top: -10px;
   right: -10px;
-  width: 24px; height: 24px; line-height: 24px;
+  width: 24px;
+  height: 24px;
+  line-height: 24px;
   border-radius: 9999px;
   background: #fff;
-  box-shadow: 0 2px 6px rgba(0,0,0,.15);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
   color: #111;
 }
 </style>
