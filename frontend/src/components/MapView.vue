@@ -185,6 +185,9 @@ function attachPopupInteraction(layerId, datasetIdOverride = null) {
     const feature = e?.features?.[0]
     if (!feature) return
     const props = feature.properties || {}
+    const datasetId = datasetIdOverride || 'attraction'
+    const lon = e.lngLat.lng
+    const lat = e.lngLat.lat
     // 設置 selectedPlace，以便可以收藏
     if (datasetId === 'construction') {
       // 對於 construction 類型，使用 DIGADD 和 PURP 字段

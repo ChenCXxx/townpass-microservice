@@ -1,5 +1,5 @@
 <script setup>
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import fieldMapping from '@/config/fieldMapping.json'
 import { createFavorite, getFavorites, deleteFavorite } from '@/service/api'
 
@@ -18,6 +18,13 @@ const userId = ref(null)
 
 // 測試用的預設 user_id（當沒有 Flutter 環境時使用）
 const DEFAULT_TEST_USER_ID = '7f3562f4-bb3f-4ec7-89b9-da3b4b5ff250'
+
+// 監聽收藏更新事件，實時更新收藏狀態
+function handleFavoritesUpdated() {
+  if (userId.value && props.lon && props.lat) {
+    checkFavoriteStatus()
+  }
+}
 
 // 從 localStorage 或 window 獲取 userId
 onMounted(async () => {
@@ -44,6 +51,25 @@ onMounted(async () => {
   }
 
   // 檢查是否已收藏
+  if (userId.value && props.lon && props.lat) {
+    await checkFavoriteStatus()
+  }
+
+  // 監聽收藏更新事件
+  if (typeof window !== 'undefined') {
+    window.addEventListener('map-favorites-updated', handleFavoritesUpdated)
+  }
+})
+
+// 清理事件監聽器
+onBeforeUnmount(() => {
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('map-favorites-updated', handleFavoritesUpdated)
+  }
+})
+
+// 當 props 或 userId 變化時重新檢查收藏狀態
+watch([() => props.lon, () => props.lat, () => props.properties?.id, () => userId.value], async () => {
   if (userId.value && props.lon && props.lat) {
     await checkFavoriteStatus()
   }
