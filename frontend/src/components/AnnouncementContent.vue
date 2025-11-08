@@ -31,7 +31,7 @@ async function loadConstructionData() {
     if (data?.features) {
       constructionData.value = data.features.map((f, idx) => ({
         id: idx,
-        name: f?.properties?.AP_NAME || f?.properties?.['場地名稱'] || '施工地點',
+        name: f?.properties?.DIGADD || f?.properties?.['場地名稱'] || '施工地點',
         purpose: f?.properties?.PURP || f?.properties?.['地址'] || '',
         startDate: f?.properties?.SDATE1 || '',
         endDate: f?.properties?.EDATE1 || '',

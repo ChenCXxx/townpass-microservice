@@ -874,11 +874,11 @@ function collectNearbyPoints(lon, lat, options = {}) {
       const [flon, flat] = g.coordinates
       const d = distM(lon, lat, flon, flat)
       if (d <= maxDistance) {
-        // 名稱與內容格式：景點用 館所名稱+地址，施工用 AP_NAME + PURP
-        let name = f?.properties?.['館所名稱'] || f?.properties?.['場地名稱'] || '(未命名)'
+        // 名稱與內容格式：景點用 位置+地址，施工用 DIGADD + PURP
+        let name = f?.properties?.['位置'] || f?.properties?.['位置'] || '(未命名)'
         let addr = f?.properties?.['地址'] || ''
         if (ds.id === 'construction') {
-          const apName = f?.properties?.['AP_NAME'] || f?.properties?.['場地名稱'] || '(未命名)'
+          const apName = f?.properties?.['DIGADD'] || f?.properties?.['位置'] || '(未命名)'
           const purp = f?.properties?.['PURP'] || f?.properties?.['地址'] || ''
           name = apName
           addr = purp
@@ -964,7 +964,7 @@ function collectRoadConstructionMatches(featureCollection, maxDistance = ROAD_CO
     }
     if (minDist <= maxDistance) {
       const props = feature.properties || {}
-      let name = props['AP_NAME'] || props['場地名稱'] || props['name'] || '(未命名)'
+      let name = props['DIGADD'] || props['位置'] || props['name'] || '(未命名)'
       let addr = props['PURP'] || props['地址'] || props['road'] || ''
       results.push({
         dsid: 'construction',
@@ -1280,7 +1280,7 @@ function searchInAttractionDataset(kw) {
   const feats = cache.geo?.features || []
   const k = kw.trim()
   const f = feats.find(f => {
-    const name = String(f?.properties?.['館所名稱'] || '')
+    const name = String(f?.properties?.['位置'] || '')
     const addr = String(f?.properties?.['地址'] || '')
     return name.includes(k) || addr.includes(k)
   })
@@ -1289,7 +1289,7 @@ function searchInAttractionDataset(kw) {
     return {
       lon,
       lat,
-      place: f?.properties?.['館所名稱'] || '',
+      place: f?.properties?.['位置'] || '',
       addr: f?.properties?.['地址'] || '',
       props: f?.properties || {}
     }
@@ -1422,7 +1422,7 @@ async function goSearch() {
   const kw = (searchText.value || '').trim()
   if (!kw) return
 
-  // 1) 先查 attraction 的 館所名稱/地址
+  // 1) 先查 attraction 的 位置/地址
   const dsHit = searchInAttractionDataset(kw)
   if (dsHit) {
     lastSearchLonLat.value = { lon: dsHit.lon, lat: dsHit.lat }

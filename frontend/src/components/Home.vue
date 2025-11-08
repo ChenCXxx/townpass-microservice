@@ -165,7 +165,7 @@ function checkAndNotifyPlace(placeId, { immediate = false } = {}) {
   const place = savedPlaces.value.find(p => p.id === placeId)
   if (!place) return
   const recs = Array.isArray(place.recommendations) ? place.recommendations : []
-  const constructionCount = recs.filter(r => r?.dsid === 'construction' || (r?.props && (r.props.AP_NAME || r.props.PURP))).length
+  const constructionCount = recs.filter(r => r?.dsid === 'construction' || (r?.props && (r.props.DIGADD || r.props.PURP))).length
   if (constructionCount <= 0) return
 
   // 立即通知（前端層，不需時間間隔判斷）
@@ -237,7 +237,7 @@ function getFilteredRecommendations(place) {
         addr: notice.road || notice.name,
         dist: distance,
         props: {
-          AP_NAME: notice.name,
+          DIGADD: notice.name,
           PURP: notice.road || notice.type || '',
           SDATE: notice.start_date,
           EDATE: notice.end_date,
@@ -261,7 +261,7 @@ function getFilteredRecommendations(place) {
   
   // nearby - 使用原有的邏輯
   const recs = Array.isArray(place.recommendations) ? place.recommendations : []
-  const constructions = recs.filter(r => r?.dsid === 'construction' || (r?.props && (r.props.AP_NAME || r.props.PURP)))
+  const constructions = recs.filter(r => r?.dsid === 'construction' || (r?.props && (r.props.DIGADD || r.props.PURP)))
   return constructions
 }
 
@@ -497,7 +497,7 @@ async function triggerConstructionUpdate() {
                   class="rounded-lg border border-slate-200 bg-white px-3 py-2.5"
                 >
                   <div class="text-sm text-gray-800">
-                    <div class="font-medium">{{ rec.props?.AP_NAME || rec.name }}</div>
+                    <div class="font-medium">{{ rec.props?.DIGADD || rec.name }}</div>
                     <div class="text-xs text-gray-600 mt-0.5">{{ rec.props?.PURP || rec.addr }}</div>
                     <div v-if="rec.props?.SDATE || rec.props?.EDATE" class="text-xs text-amber-600 mt-1">
                       <span v-if="rec.props?.SDATE">{{ formatDate(rec.props.SDATE) }}</span>
