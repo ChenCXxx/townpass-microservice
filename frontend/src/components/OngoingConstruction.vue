@@ -33,25 +33,25 @@ function formatDate(dateStr) {
 </script>
 
 <template>
-  <div>
-    <div class="mb-3 flex items-center justify-between">
+  <div class="flex h-full flex-col">
+    <div class="mb-3 flex shrink-0 items-center justify-between">
       <h2 class="text-lg font-semibold text-gray-800">進行中的施工</h2>
       <span class="text-sm text-gray-500">共 {{ notices.length }} 則</span>
     </div>
 
-    <div v-if="loading" class="text-center py-12 text-gray-500">
+    <div v-if="loading" class="flex-1 flex items-center justify-center text-center text-gray-500">
       載入中...
     </div>
 
-    <div v-else-if="error" class="text-center py-12 text-red-500">
+    <div v-else-if="error" class="flex-1 flex items-center justify-center text-center text-red-500">
       載入失敗：{{ error }}
     </div>
 
-    <div v-else-if="notices.length === 0 && !hasUpcoming" class="text-center py-12 text-gray-500">
+    <div v-else-if="notices.length === 0 && !hasUpcoming" class="flex-1 flex items-center justify-center text-center text-gray-500">
       目前沒有施工公告
     </div>
 
-    <ul v-else-if="notices.length > 0" class="space-y-3">
+    <ul v-else-if="notices.length > 0" class="flex-1 space-y-3 overflow-y-auto pr-2">
       <li
         v-for="notice in notices"
         :key="notice.id"

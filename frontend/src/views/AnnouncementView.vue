@@ -99,20 +99,24 @@ const ongoingNotices = computed(() => {
 
 <template>
   <div class="bg-white min-h-screen">
-    <section class="mx-auto max-w-[720px] px-4 pt-3 pb-5">
+    <section class="mx-auto flex h-dvh w-full max-w-[720px] flex-col overflow-hidden px-4 pt-3 pb-5">
       <TopTabs :active="currentTab" @select="selectTab" />
 
-      <div class="mt-3 space-y-6">
+      <div class="mt-3 flex flex-1 flex-col gap-4 overflow-hidden min-h-0">
         <!-- 即將開始的施工 -->
-        <UpcomingConstruction :notices="upcomingNotices" />
+        <div class="flex h-1/2 flex-col overflow-hidden">
+          <UpcomingConstruction :notices="upcomingNotices" />
+        </div>
 
         <!-- 進行中的施工 -->
-        <OngoingConstruction 
-          :notices="ongoingNotices" 
-          :loading="loading"
-          :error="error"
-          :has-upcoming="upcomingNotices.length > 0"
-        />
+        <div class="flex h-1/2 flex-col overflow-hidden">
+          <OngoingConstruction 
+            :notices="ongoingNotices" 
+            :loading="loading"
+            :error="error"
+            :has-upcoming="upcomingNotices.length > 0"
+          />
+        </div>
       </div>
     </section>
   </div>

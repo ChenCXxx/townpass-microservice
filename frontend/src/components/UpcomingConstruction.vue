@@ -21,13 +21,17 @@ function formatDate(dateStr) {
 </script>
 
 <template>
-  <div v-if="notices.length > 0">
-    <div class="mb-3 flex items-center justify-between">
+  <div class="flex h-full flex-col">
+    <div class="mb-3 flex shrink-0 items-center justify-between">
       <h2 class="text-lg font-semibold text-gray-800">即將開始的施工</h2>
       <span class="text-sm text-gray-500">共 {{ notices.length }} 則</span>
     </div>
 
-    <ul class="space-y-3">
+    <div v-if="notices.length === 0" class="flex-1 flex items-center justify-center text-center text-gray-500">
+      目前沒有即將開始的施工
+    </div>
+
+    <ul v-else class="flex-1 space-y-3 overflow-y-auto pr-2">
       <li
         v-for="notice in notices"
         :key="notice.id"
