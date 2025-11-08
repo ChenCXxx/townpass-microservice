@@ -1,5 +1,3 @@
-"""Load road centerline GeoJSON into the road_segments table."""
-
 from __future__ import annotations
 
 import argparse

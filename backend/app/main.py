@@ -99,69 +99,67 @@ async def lifespan(app: FastAPI):
         else:
             logger.info(f"Found {notice_count} construction notices in database. Skipping initial update.")
             
-            # 檢查是否有缺少 geometry 的記錄
-            from sqlalchemy import or_
-            all_notices = db.query(ConstructionNotice).all()
-            notices_without_geometry = sum(
-                1 for n in all_notices 
-                if n.geometry is None or n.geometry == {} or (isinstance(n.geometry, dict) and len(n.geometry) == 0)
-            )
-            
-            if notices_without_geometry > 0:
-                logger.info(f"發現 {notices_without_geometry} 筆缺少 geometry 的記錄，開始更新...")
-                geometry_result = update_missing_geometries(db)
-                if geometry_result.get("status") == "success":
-                    logger.info(f"Geometry 更新完成: 成功更新 {geometry_result.get('updated_count', 0)} 筆，失敗 {geometry_result.get('failed_count', 0)} 筆")
+            # 檢查並更新缺少 geometry 的記錄
+            geometry_result = update_missing_geometries(db)
+            if geometry_result.get("status") == "success":
+                updated_count = geometry_result.get('updated_count', 0)
+                failed_count = geometry_result.get('failed_count', 0)
+                total_missing = geometry_result.get('total', 0)
+                if total_missing > 0:
+                    logger.info(f"Geometry 更新完成: 發現 {total_missing} 筆缺少 geometry 的記錄，成功更新 {updated_count} 筆，失敗 {failed_count} 筆")
                 else:
-                    logger.error(f"Geometry 更新失敗: {geometry_result.get('message', 'Unknown error')}")
-                    logger.warning("Application will continue to start, but some notices may lack geometry")
+                    logger.info("所有施工通知記錄都已包含 geometry 資料")
             else:
-                logger.info("所有施工通知記錄都已包含 geometry 資料")
+                logger.error(f"Geometry 更新失敗: {geometry_result.get('message', 'Unknown error')}")
+                logger.warning("Application will continue to start, but some notices may lack geometry")
     except Exception as e:
         logger.error(f"Failed to check/update construction notices: {e}", exc_info=True)
         logger.warning("Application will continue to start, but construction notices may be unavailable")
     finally:
         db.close()
     
-    # Setup scheduled task
+    # Setup scheduled tasks using CONSTRUCTION_UPDATE_SCHEDULE
     # Parse cron schedule: "minute hour day month day_of_week"
-    # Example: "0 2 * * *" = daily at 2:00 AM
+    # Example: "0 18 * * *" = daily at 6:00 PM, "0 */6 * * *" = every 6 hours
     schedule_parts = settings.CONSTRUCTION_UPDATE_SCHEDULE.split()
+    
+    def parse_cron_value(value: str):
+        """Parse cron value: '*' -> None, otherwise return as string (supports '*/6', '0-5', etc.)"""
+        return None if value == '*' else value
+    
     if len(schedule_parts) == 5:
         minute, hour, day, month, day_of_week = schedule_parts
-        scheduler.add_job(
-            scheduled_update,
-            trigger=CronTrigger(
-                minute=minute,
-                hour=hour,
-                day=day,
-                month=month,
-                day_of_week=day_of_week
-            ),
-            id="construction_update",
-            name="Update construction.geojson",
-            replace_existing=True
+        # Create trigger from cron string
+        trigger = CronTrigger(
+            minute=parse_cron_value(minute),
+            hour=parse_cron_value(hour),
+            day=parse_cron_value(day),
+            month=parse_cron_value(month),
+            day_of_week=parse_cron_value(day_of_week)
         )
-        logger.info(f"Scheduled construction data update: {settings.CONSTRUCTION_UPDATE_SCHEDULE}")
     else:
-        logger.warning(f"Invalid schedule format: {settings.CONSTRUCTION_UPDATE_SCHEDULE}. Using default: daily at 2 AM")
-        scheduler.add_job(
-            scheduled_update,
-            trigger=CronTrigger(hour=2, minute=0),
-            id="construction_update",
-            name="Update construction.geojson",
-            replace_existing=True
-        )
+        # Fallback to default if format is invalid
+        logger.warning(f"Invalid schedule format: {settings.CONSTRUCTION_UPDATE_SCHEDULE}. Using default: daily at 6 PM")
+        trigger = CronTrigger(hour=18, minute=0)
     
-    # Setup construction notices scheduled task (daily at 6:00 PM)
+    # Add both scheduled tasks with the same trigger
+    scheduler.add_job(
+        scheduled_update,
+        trigger=trigger,
+        id="construction_update",
+        name="Update construction.geojson",
+        replace_existing=True
+    )
+    logger.info(f"Scheduled construction data update: {settings.CONSTRUCTION_UPDATE_SCHEDULE}")
+    
     scheduler.add_job(
         scheduled_notice_update,
-        trigger=CronTrigger(hour=18, minute=0),  # 每天下午6點
+        trigger=trigger,
         id="construction_notices_update",
         name="Update construction notices",
         replace_existing=True
     )
-    logger.info("Scheduled construction notices update: daily at 6:00 PM (18:00)")
+    logger.info(f"Scheduled construction notices update: {settings.CONSTRUCTION_UPDATE_SCHEDULE}")
     
     scheduler.start()
     logger.info("=" * 60)

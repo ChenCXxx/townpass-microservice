@@ -351,9 +351,10 @@ def save_construction_notices(session: Session, notices: List[Dict[str, Any]], c
     """
     try:
         if clear_existing:
+            deleted_count = session.query(ConstructionNotice).count()
             session.query(ConstructionNotice).delete()
             session.commit()
-            logger.info("已清除現有資料")
+            logger.info(f"已清除現有資料（刪除 {deleted_count} 筆記錄）")
         
         if not notices:
             return 0
@@ -362,11 +363,12 @@ def save_construction_notices(session: Session, notices: List[Dict[str, Any]], c
         logger.info(f"開始處理 {total} 筆資料...")
         
         # 批量查詢所有已存在的記錄（一次性查詢，避免 N+1 問題）
+        # 如果 clear_existing=True，此時資料庫應該是空的
         urls = [n.get('url') for n in notices if n.get('url')]
         names = [n.get('name') for n in notices if n.get('name')]
         
         existing_map = {}
-        if urls:
+        if urls and not clear_existing:  # 如果已清除，跳過查詢（資料庫是空的）
             existing_by_url = session.query(ConstructionNotice).filter(
                 ConstructionNotice.url.in_(urls)
             ).all()
@@ -374,7 +376,7 @@ def save_construction_notices(session: Session, notices: List[Dict[str, Any]], c
                 if notice.url:
                     existing_map[('url', notice.url)] = notice
         
-        if names:
+        if names and not clear_existing:  # 如果已清除，跳過查詢（資料庫是空的）
             existing_by_name = session.query(ConstructionNotice).filter(
                 ConstructionNotice.name.in_(names)
             ).all()
@@ -386,7 +388,10 @@ def save_construction_notices(session: Session, notices: List[Dict[str, Any]], c
                     elif ('name', notice.name) not in existing_map:
                         existing_map[('name', notice.name)] = notice
         
-        logger.info(f"找到 {len(existing_map)} 筆已存在的記錄")
+        if clear_existing:
+            logger.info(f"已清除模式：所有 {total} 筆都是新記錄，需要獲取座標")
+        else:
+            logger.info(f"找到 {len(existing_map)} 筆已存在的記錄")
         
         # 找出需要獲取座標的 notices（不存在或沒有 geometry）
         notices_needing_geometry = []
@@ -509,11 +514,12 @@ def update_missing_geometries(session: Session) -> Dict[str, Any]:
         ]
         
         if not notices_without_geometry:
-            logger.info("所有施工通知記錄都已包含 geometry 資料")
             return {
                 "status": "success",
                 "message": "All notices already have geometry",
-                "updated_count": 0
+                "updated_count": 0,
+                "failed_count": 0,
+                "total": 0
             }
         
         logger.info(f"發現 {len(notices_without_geometry)} 筆缺少 geometry 的記錄，開始更新...")

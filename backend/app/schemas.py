@@ -57,6 +57,6 @@ class ConstructionNoticeOut(BaseModel):
     unit: str | None = None
     road: str | None = None
     url: str | None = None
-    geometry: dict[str, Any] | None = None  # GeoJSON Point 格式（單一點座標）
+    geometry: dict[str, Any] | None = None
     class Config:
         from_attributes = True
