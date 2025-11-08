@@ -11,6 +11,20 @@ const emit = defineEmits(['select'])
 function select(tab) {
   emit('select', tab)
 }
+
+// 處理觸摸事件（用於移動設備和 Flutter WebView）
+function handleTouchStart(tab, event) {
+  event.preventDefault()
+  event.stopPropagation()
+  select(tab)
+}
+
+// 處理點擊事件
+function handleClick(tab, event) {
+  event.preventDefault()
+  event.stopPropagation()
+  select(tab)
+}
 </script>
 
 <template>
@@ -18,34 +32,53 @@ function select(tab) {
     <!-- 地圖 -->
     <button
       type="button"
-      class="relative flex-1 py-3 text-center text-base cursor-pointer"
+      class="relative flex-1 py-3 text-center text-base cursor-pointer tab-button"
       style="z-index: 101; position: relative;"
       :class="props.active === 'map' ? 'text-blue-900 font-semibold border-b-2 border-blue-900' : 'text-gray-400'"
-      @click.stop="select('map')"
+      @click="handleClick('map', $event)"
+      @touchstart="handleTouchStart('map', $event)"
     >地圖</button>
     <!-- 公告 -->
     <button
       type="button"
-      class="relative flex-1 py-3 text-center text-base cursor-pointer"
+      class="relative flex-1 py-3 text-center text-base cursor-pointer tab-button"
       style="z-index: 101; position: relative;"
       :class="props.active === 'announcement' ? 'text-blue-900 font-semibold border-b-2 border-blue-900' : 'text-gray-400'"
-      @click.stop="select('announcement')"
+      @click="handleClick('announcement', $event)"
+      @touchstart="handleTouchStart('announcement', $event)"
     >公告</button>
     <!-- 收藏 -->
     <button
       type="button"
-      class="relative flex-1 py-3 text-center text-base cursor-pointer"
+      class="relative flex-1 py-3 text-center text-base cursor-pointer tab-button"
       style="z-index: 101; position: relative;"
       :class="props.active === 'recommend' ? 'text-blue-900 font-semibold border-b-2 border-blue-900' : 'text-gray-400'"
-      @click.stop="select('recommend')"
+      @click="handleClick('recommend', $event)"
+      @touchstart="handleTouchStart('recommend', $event)"
     >收藏</button>
     <!-- 偵測 -->
     <button
       type="button"
-      class="relative flex-1 py-3 text-center text-base cursor-pointer"
+      class="relative flex-1 py-3 text-center text-base cursor-pointer tab-button"
       style="z-index: 101; position: relative;"
       :class="props.active === 'watch' ? 'text-blue-900 font-semibold border-b-2 border-blue-900' : 'text-gray-400'"
-      @click.stop="select('watch')"
+      @click="handleClick('watch', $event)"
+      @touchstart="handleTouchStart('watch', $event)"
     >偵測</button>
   </nav>
 </template>
+
+<style scoped>
+.tab-button {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: auto;
+  outline: none;
+}
+
+.tab-button:active {
+  opacity: 0.7;
+}
+</style>
