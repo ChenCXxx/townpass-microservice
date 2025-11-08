@@ -47,8 +47,9 @@ const TPE_BBOX = '121.457,24.955,121.654,25.201'
 const API_BASE = import.meta.env.VITE_API_BASE || ''
 
 // ====== 資料集（全部顯示） ======
+const ATTRACTION_DATASET_URL = '/mapData/attraction_tpe.geojson'
+
 const datasets = ref([
-  { id: 'attraction', name: '景點', url: '/mapData/attraction_tpe.geojson', color: '#f59e0b', outline: '#92400e', visible: true, includeNearby: true },
   { id: 'construction', name: '施工地點', url: `${API_BASE}/api/construction/geojson`, color: '#ef4444', outline: '#7f1d1d', visible: true, includeNearby: true },
   { id: 'narrow_street', name: '巷弄線圖', url: '/mapData/fire_narrow_street.geojson', color: '#64748b', outline: '#475569', visible: true, includeNearby: false },
 ])
@@ -2108,11 +2109,8 @@ async function getAttractionFeaturesForSearch() {
   if (cache?.geo?.features) return cache.geo.features
   if (Array.isArray(attractionSearchFeatures)) return attractionSearchFeatures
 
-  const ds = datasets.value.find((item) => item.id === 'attraction')
-  if (!ds) return []
-
   try {
-    const geo = await fetch(ds.url).then((r) => r.json())
+    const geo = await fetch(ATTRACTION_DATASET_URL).then((r) => r.json())
     const features = Array.isArray(geo?.features) ? geo.features : []
     attractionSearchFeatures = features
     return features
