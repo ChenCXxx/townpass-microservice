@@ -37,3 +37,4 @@ class ConstructionNotice(Base):
     unit = Column(String(200), nullable=True)  # 執行單位
     road = Column(String(500), nullable=True)  # 道路/地點
     url = Column(String(1000), nullable=True)  # 詳細資訊連結
+    geometry = Column(JSON, nullable=True)  # GeoJSON 格式的幾何資料（Polygon 或 LineString）

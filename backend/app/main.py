@@ -80,18 +80,24 @@ async def lifespan(app: FastAPI):
         logger.error(f"Initial update failed with exception: {e}", exc_info=True)
         logger.warning("Application will continue to start, but construction data may be unavailable")
     
-    # Run initial construction notices update on startup
-    logger.info("Running initial construction notices update on startup...")
+    # Check if construction notices exist in database, only update if empty
+    logger.info("Checking construction notices in database...")
     db = SessionLocal()
     try:
-        result = update_construction_notices(db, max_pages=None, clear_existing=True)
-        if result.get("status") == "success":
-            logger.info(f"Initial construction notices update completed: scraped {result.get('scraped_count', 0)}, saved {result.get('saved_count', 0)}")
+        from .models import ConstructionNotice
+        notice_count = db.query(ConstructionNotice).count()
+        if notice_count == 0:
+            logger.info("No construction notices found in database. Running initial update...")
+            result = update_construction_notices(db, max_pages=None, clear_existing=True)
+            if result.get("status") == "success":
+                logger.info(f"Initial construction notices update completed: scraped {result.get('scraped_count', 0)}, saved {result.get('saved_count', 0)}")
+            else:
+                logger.error(f"Initial construction notices update failed: {result.get('message', 'Unknown error')}")
+                logger.warning("Application will continue to start, but construction notices may be unavailable")
         else:
-            logger.error(f"Initial construction notices update failed: {result.get('message', 'Unknown error')}")
-            logger.warning("Application will continue to start, but construction notices may be unavailable")
+            logger.info(f"Found {notice_count} construction notices in database. Skipping initial update.")
     except Exception as e:
-        logger.error(f"Initial construction notices update failed with exception: {e}", exc_info=True)
+        logger.error(f"Failed to check/update construction notices: {e}", exc_info=True)
         logger.warning("Application will continue to start, but construction notices may be unavailable")
     finally:
         db.close()
@@ -126,15 +132,15 @@ async def lifespan(app: FastAPI):
             replace_existing=True
         )
     
-    # Setup construction notices scheduled task (every 10 minutes)
+    # Setup construction notices scheduled task (daily at 6:00 PM)
     scheduler.add_job(
         scheduled_notice_update,
-        trigger=IntervalTrigger(minutes=10),
+        trigger=CronTrigger(hour=18, minute=0),  # 每天下午6點
         id="construction_notices_update",
         name="Update construction notices",
         replace_existing=True
     )
-    logger.info("Scheduled construction notices update: every 10 minutes")
+    logger.info("Scheduled construction notices update: daily at 6:00 PM (18:00)")
     
     scheduler.start()
     logger.info("=" * 60)

@@ -9,7 +9,8 @@ class UserCreate(BaseModel):
 class UserOut(BaseModel):
     id: int
     name: str
-    class Config: orm_mode = True
+    class Config:
+        from_attributes = True
 
 
 class TestCreate(BaseModel):
@@ -21,7 +22,8 @@ class TestOut(BaseModel):
     id: int
     title: str
     description: str | None = None
-    class Config: orm_mode = True
+    class Config:
+        from_attributes = True
 
 
 class RoadSegmentBase(BaseModel):
@@ -43,7 +45,7 @@ class RoadSegmentOut(RoadSegmentBase):
     osmid: str
 
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 
 class ConstructionNoticeOut(BaseModel):
@@ -55,4 +57,6 @@ class ConstructionNoticeOut(BaseModel):
     unit: str | None = None
     road: str | None = None
     url: str | None = None
-    class Config: orm_mode = True
+    geometry: dict[str, Any] | None = None  # GeoJSON 格式
+    class Config:
+        from_attributes = True

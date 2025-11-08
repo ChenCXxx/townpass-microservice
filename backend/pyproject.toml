@@ -47,6 +47,7 @@ dependencies = [
     "pydantic==2.12.3",
     "pydantic-core==2.41.4",
     "pydantic-settings==2.11.0",
+    "pyproj>=3.7.2",
     "python-dateutil==2.9.0.post0",
     "python-dotenv==1.2.1",
     "pyyaml==6.0.3",

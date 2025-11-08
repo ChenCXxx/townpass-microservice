@@ -1,8 +1,9 @@
 import requests
 import re
+import json
 from bs4 import BeautifulSoup
 from sqlalchemy.orm import Session
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from datetime import date
 from ..models import ConstructionNotice
 import logging
@@ -10,6 +11,140 @@ import logging
 logger = logging.getLogger(__name__)
 
 BASE_URL = "https://dig.taipei/Tpdig/PWorkData.aspx"
+COORDINATE_API_URL = "https://dig.taipei/TpdigR.net/Map/caseMap3.ashx"
+
+
+def extract_caseid_from_url(url: str) -> Optional[str]:
+    """
+    從 URL 中提取 caseid
+    
+    Args:
+        url: 例如 "https://dig.taipei/TpdigR.net/Map/ShowPWorkData.aspx?caseid=11200814"
+    
+    Returns:
+        caseid 字串，如果提取失敗則返回 None
+    """
+    if not url:
+        return None
+    match = re.search(r'caseid=(\d+)', url)
+    return match.group(1) if match else None
+
+
+def twd97_to_wgs84(x: float, y: float) -> tuple[float, float]:
+    """
+    將 TWD97 座標轉換為 WGS84 經緯度
+    
+    Args:
+        x: TWD97 X 座標
+        y: TWD97 Y 座標
+    
+    Returns:
+        (longitude, latitude) 元組
+    """
+    try:
+        # 使用 pyproj 進行座標轉換
+        from pyproj import Transformer
+        
+        # TWD97 / TM2 zone 121 (EPSG:3826) -> WGS84 (EPSG:4326)
+        transformer = Transformer.from_crs("EPSG:3826", "EPSG:4326", always_xy=True)
+        lon, lat = transformer.transform(x, y)
+        return float(lon), float(lat)
+    except ImportError:
+        logger.warning("pyproj not installed, using approximate conversion")
+        # 簡化的近似轉換（不精確，建議安裝 pyproj）
+        # TWD97 到 WGS84 的近似轉換
+        lon = 121.0 + (x - 250000) / 111320.0
+        lat = 24.0 + (y - 2750000) / 110540.0
+        return lon, lat
+    except Exception as e:
+        logger.error(f"Failed to convert coordinates ({x}, {y}): {e}")
+        return None, None
+
+
+def parse_xystring_to_geojson(xystring: str) -> Optional[Dict[str, Any]]:
+    """
+    將 XYSTRING 座標字串轉換為 GeoJSON Polygon
+    
+    Args:
+        xystring: 座標字串，格式如 "306329.019,2768888.675,306343.515,2768885.437,..."
+    
+    Returns:
+        GeoJSON Polygon 格式的字典，如果解析失敗則返回 None
+    """
+    if not xystring or not xystring.strip():
+        return None
+    
+    try:
+        # 分割座標字串
+        coords = [float(c.strip()) for c in xystring.split(',')]
+        
+        if len(coords) < 6 or len(coords) % 2 != 0:
+            logger.warning(f"Invalid coordinate string length: {len(coords)}")
+            return None
+        
+        # 將座標配對成 (x, y) 元組
+        twd97_points = []
+        for i in range(0, len(coords), 2):
+            if i + 1 < len(coords):
+                twd97_points.append((coords[i], coords[i + 1]))
+        
+        if len(twd97_points) < 3:
+            logger.warning(f"Not enough points to form a polygon: {len(twd97_points)}")
+            return None
+        
+        # 轉換為 WGS84 座標
+        wgs84_points = []
+        for x, y in twd97_points:
+            lon, lat = twd97_to_wgs84(x, y)
+            if lon is not None and lat is not None:
+                wgs84_points.append([lon, lat])
+        
+        if len(wgs84_points) < 3:
+            logger.warning(f"Failed to convert enough points: {len(wgs84_points)}")
+            return None
+        
+        # 確保多邊形閉合（第一個點和最後一個點相同）
+        if wgs84_points[0] != wgs84_points[-1]:
+            wgs84_points.append(wgs84_points[0])
+        
+        # 構建 GeoJSON Polygon
+        return {
+            "type": "Polygon",
+            "coordinates": [wgs84_points]
+        }
+    except Exception as e:
+        logger.error(f"Failed to parse XYSTRING '{xystring}': {e}", exc_info=True)
+        return None
+
+
+def fetch_coordinates_for_case(caseid: str) -> Optional[Dict[str, Any]]:
+    """
+    從 API 獲取指定 caseid 的座標資料
+    
+    Args:
+        caseid: 案件 ID
+    
+    Returns:
+        包含座標資料的字典，如果獲取失敗則返回 None
+    """
+    if not caseid:
+        return None
+    
+    try:
+        url = f"{COORDINATE_API_URL}?cmode=DIGPWORK&caseid={caseid}"
+        response = requests.get(url, timeout=5)  # 減少超時時間
+        response.raise_for_status()
+        
+        data = response.json()
+        if isinstance(data, list) and len(data) > 0:
+            return data[0]  # 返回第一個結果
+        return None
+    except requests.exceptions.Timeout:
+        logger.debug(f"Timeout fetching coordinates for caseid {caseid}")
+        return None
+    except Exception as e:
+        logger.debug(f"Failed to fetch coordinates for caseid {caseid}: {e}")
+        return None
 
 
 def parse_roc_date_range(date_range_str: str) -> tuple[date | None, date | None]:
@@ -125,9 +260,11 @@ def scrape_construction_notices(session: Session, max_pages: int = None) -> List
             
             # Step 5: 解析結果
             rows = soup.select("tr")[1:]  # 跳過表頭
+            row_count = 0
             for tr in rows:
                 tds = tr.select("td")
                 if len(tds) >= 4:
+                    row_count += 1
                     # 解析欄位
                     date_range_str = tds[0].text.strip()  # 日期範圍字串
                     notice_type = tds[1].text.strip()  # 類型
@@ -153,6 +290,16 @@ def scrape_construction_notices(session: Session, max_pages: int = None) -> List
                         if match:
                             road = match.group(1)
                     
+                    # 提取 caseid 並獲取座標（先不獲取，在保存時再獲取以加快速度）
+                    # geometry = None
+                    # caseid = extract_caseid_from_url(url) if url else None
+                    # if caseid:
+                    #     coord_data = fetch_coordinates_for_case(caseid)
+                    #     if coord_data and coord_data.get('XYSTRING'):
+                    #         geometry = parse_xystring_to_geojson(coord_data['XYSTRING'])
+                    #         if geometry:
+                    #             logger.debug(f"Successfully parsed coordinates for caseid {caseid}")
+                    
                     notice_data = {
                         'start_date': start_date,
                         'end_date': end_date,
@@ -160,9 +307,12 @@ def scrape_construction_notices(session: Session, max_pages: int = None) -> List
                         'type': notice_type if notice_type else None,
                         'unit': unit if unit else None,
                         'road': road if road else name,  # 如果沒有提取到道路，就用名稱
-                        'url': url
+                        'url': url,
+                        'geometry': None  # 稍後在保存時獲取
                     }
                     all_notices.append(notice_data)
+            
+            logger.info(f"第 {page_num} 頁解析完成，共 {row_count} 筆資料")
         
         logger.info(f"爬取完成，共 {len(all_notices)} 筆資料")
         return all_notices
@@ -191,7 +341,14 @@ def save_construction_notices(session: Session, notices: List[Dict[str, Any]], c
             logger.info("已清除現有資料")
         
         saved_count = 0
-        for notice_data in notices:
+        updated_count = 0
+        total = len(notices)
+        
+        for idx, notice_data in enumerate(notices, 1):
+            # 每處理 10 筆顯示一次進度
+            if idx % 10 == 0 or idx == total:
+                logger.info(f"處理進度: {idx}/{total}")
+            
             # 檢查是否已存在（根據 URL 或 name）
             existing = None
             if notice_data.get('url'):
@@ -203,6 +360,17 @@ def save_construction_notices(session: Session, notices: List[Dict[str, Any]], c
                     ConstructionNotice.name == notice_data['name']
                 ).first()
             
+            # 獲取座標（僅在需要時）
+            geometry = None
+            if not existing or not existing.geometry:
+                caseid = extract_caseid_from_url(notice_data.get('url')) if notice_data.get('url') else None
+                if caseid:
+                    coord_data = fetch_coordinates_for_case(caseid)
+                    if coord_data and coord_data.get('XYSTRING'):
+                        geometry = parse_xystring_to_geojson(coord_data['XYSTRING'])
+                        if geometry:
+                            logger.debug(f"Successfully parsed coordinates for caseid {caseid}")
+            
             if not existing:
                 notice = ConstructionNotice(
                     start_date=notice_data.get('start_date'),
@@ -211,10 +379,17 @@ def save_construction_notices(session: Session, notices: List[Dict[str, Any]], c
                     type=notice_data.get('type'),
                     unit=notice_data.get('unit'),
                     road=notice_data.get('road'),
-                    url=notice_data.get('url')
+                    url=notice_data.get('url'),
+                    geometry=geometry
                 )
                 session.add(notice)
                 saved_count += 1
+            else:
+                # 如果已存在但沒有座標，嘗試更新座標
+                if not existing.geometry and geometry:
+                    existing.geometry = geometry
+                    session.add(existing)
+                    updated_count += 1
         
         session.commit()
         logger.info(f"成功保存 {saved_count} 筆新資料")
