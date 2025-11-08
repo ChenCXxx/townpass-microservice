@@ -11,6 +11,7 @@ import 'package:town_pass/service/package_service.dart';
 import 'package:town_pass/service/shared_preferences_service.dart';
 import 'package:town_pass/service/subscription_service.dart';
 import 'package:town_pass/service/construction_alert_service.dart';
+import 'package:town_pass/service/background_notification_service.dart';
 import 'package:town_pass/util/tp_colors.dart';
 import 'package:town_pass/util/tp_route.dart';
 
@@ -25,6 +26,7 @@ void main() async {
   //   widgetsBinding: WidgetsFlutterBinding.ensureInitialized(),
   // );
 
+  await BackgroundNotificationService.initialize();
   await initServices();
 
   SystemChrome.setSystemUIOverlayStyle(_transparentStatusBar);
