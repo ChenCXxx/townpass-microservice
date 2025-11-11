@@ -31,7 +31,7 @@
 └─ README.md
 ```
 
-## Description（專案介紹）
+## Description
 
 這個專案包含三個主要部分：
 
@@ -43,7 +43,7 @@
 
 ---
 
-## Requirement（運行環境需求）
+## Requirement
 
 - 作業系統：macOS / Linux / Windows
 - Python：3.11+
@@ -55,7 +55,7 @@
 
 ---
 
-## .env Setting（環境檔欄位）
+## .env Setting
 
 Backend（`backend/.env` 或 `backend/.env.development`）：
 
@@ -76,7 +76,7 @@ CI / Deploy secrets（放在 GitHub Secrets / Cloud Secret Manager）：
 
 ---
 
-## Alembic（資料庫遷移）
+## Alembic
 
 修改 app/models.py 之後 → 產生遷移檔 → 套用 → 驗證
 
@@ -172,7 +172,7 @@ pnpm dev
 
 ---
 
-## Flutter（TownPass）整合微服務（可選）
+## Flutter（TownPass）
 
 在 App 中加入「微服務」入口，destinationUrl 指向前端（Firebase Hosting）：
 
@@ -202,7 +202,7 @@ extension MyServiceIdExt on MyServiceItemId {
 
 ---
 
-## Architecture（架構總覽）
+## Architecture
 
 - `backend/`: FastAPI + SQLAlchemy + Alembic
 - `frontend/`: Vite + Vue（pnpm）
@@ -210,7 +210,7 @@ extension MyServiceIdExt on MyServiceItemId {
 
 ---
 
-## Troubleshooting（常見問題與排解）
+## Troubleshooting
 
 - 404 for new route: 運行中的 `api` container 未載入最新程式，請重建 `api` image：
 
