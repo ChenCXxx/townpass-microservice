@@ -1,4 +1,4 @@
-# TownPass — Microservice + Frontend
+# TownPass Microservice — 施工安全通 (Construction Safety Pass)
 ## Introduction
 
 施工安全通提供友善的地圖介面與客製化通知，協助市民即時掌握道路施工資訊、降低行車風險。使用者可輸入地址與特定道路名稱，或設定起訖點檢視完整路線，並將常關注地點加入收藏（綁定「台北通」身分）。一旦收藏區域有施工更新，系統會透過 WebSocket 即時推播通知，並同步提供未來施工公告，讓使用者持續掌握最在意的路段變化。
